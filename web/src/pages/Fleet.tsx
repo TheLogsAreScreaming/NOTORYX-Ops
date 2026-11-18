@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import Chart from "../components/Chart";
 import { Node, ago, api, duration, fmt, useApi, useLive } from "../api";
+import { currentTheme } from "../themes";
+import { useLook } from "../components/ThemePicker";
 
 type Rep = {
   id: number;
@@ -37,10 +39,11 @@ function battPct(mv: number | null | undefined) {
 function History({ rep }: { rep: Rep }) {
   const [days, setDays] = useState(7);
   const { data } = useApi<any[]>(`/api/fleet/${rep.id}/history?days=${days}`);
+  const look = useLook();
   const ok = (data || []).filter((r) => r.ok);
   const x = useMemo(() => ok.map((r) => r.polled_at), [data]); // eslint-disable-line react-hooks/exhaustive-deps
-  const batt = useMemo(() => [{ label: "Battery (V)", color: "#3fb8a0", values: ok.map((r) => (r.battery_mv ? r.battery_mv / 1000 : null)) }], [data]); // eslint-disable-line react-hooks/exhaustive-deps
-  const noise = useMemo(() => [{ label: "Noise floor (dBm)", color: "#e3a33b", values: ok.map((r) => r.noise_floor) }], [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const batt = useMemo(() => [{ label: "Battery (V)", color: currentTheme().chart[0], values: ok.map((r) => (r.battery_mv ? r.battery_mv / 1000 : null)) }], [data, look]); // eslint-disable-line react-hooks/exhaustive-deps
+  const noise = useMemo(() => [{ label: "Noise floor (dBm)", color: currentTheme().chart[1], values: ok.map((r) => r.noise_floor) }], [data, look]); // eslint-disable-line react-hooks/exhaustive-deps
   const air = useMemo(() => {
     const vals = ok.map((r, i) => {
       if (i === 0 || r.airtime_s == null || ok[i - 1].airtime_s == null) return null;
@@ -48,8 +51,8 @@ function History({ rep }: { rep: Rep }) {
       const d = r.airtime_s - ok[i - 1].airtime_s;
       return d >= 0 && dt > 0 ? (d / dt) * 100 : null;
     });
-    return [{ label: "Transmit airtime (%)", color: "#5b9cf0", values: vals }];
-  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+    return [{ label: "Transmit airtime (%)", color: currentTheme().chart[2], values: vals }];
+  }, [data, look]); // eslint-disable-line react-hooks/exhaustive-deps
   const fails = (data || []).filter((r) => !r.ok);
   const nb = ok.slice().reverse().find((r) => r.neighbours)?.neighbours as any[] | undefined;
   return (

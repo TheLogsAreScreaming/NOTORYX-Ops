@@ -3,15 +3,13 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "uplot/dist/uPlot.min.css";
+import "@fontsource-variable/sora";
+import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
 import App from "./App";
+import { restoreTheme } from "./themes";
 
-try {
-  const theme = localStorage.getItem("notoryx-ops-theme");
-  if (theme) document.documentElement.dataset.theme = theme;
-} catch {
-  /* storage blocked: follow the system theme */
-}
+restoreTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

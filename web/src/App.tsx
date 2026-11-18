@@ -1,5 +1,6 @@
 import { NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { useApi, useConnected } from "./api";
+import { LookButton } from "./components/ThemePicker";
 import LiveMap from "./pages/LiveMap";
 import Packets from "./pages/Packets";
 import Channels from "./pages/Channels";
@@ -42,7 +43,8 @@ export default function App() {
           </NavLink>
         ))}
         <div className="foot">
-          <div>{info?.name || "Station"}</div>
+          <LookButton />
+          <div style={{ marginTop: 8 }}>{info?.name || "Station"}</div>
           <div>
             <span className="dot" style={{ background: live ? "var(--ok)" : "var(--bad)" }} />
             {live ? "Live" : "Reconnecting"}

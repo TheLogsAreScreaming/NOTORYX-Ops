@@ -1,59 +1,123 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl, { Map as MlMap } from "maplibre-gl";
+import { Theme, currentTheme, onTheme } from "../themes";
 
-const STYLES = {
-  light: "https://tiles.openfreemap.org/styles/positron",
-  dark: "https://tiles.openfreemap.org/styles/dark",
-  streets: "https://tiles.openfreemap.org/styles/liberty",
-};
-export type MapStyle = keyof typeof STYLES;
+/** One clean base map, recoloured to the current theme so every look has its own map. */
+const BASE_STYLE = "https://tiles.openfreemap.org/styles/positron";
 
-function prefersDark() {
-  const t = document.documentElement.dataset.theme;
-  if (t) return t === "dark";
-  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+type Layer = { id: string; type: string; source?: string; paint?: Record<string, unknown> };
+
+/** The paint changes that give the base map a theme's colours. Our own data layers are skipped. */
+function tintRules(layer: Layer, t: Theme): [string, unknown][] {
+  const c = t.map;
+  const id = layer.id;
+  if (layer.source && layer.source !== "openmaptiles") return [];
+  if (layer.type === "background") return [["background-color", c.land]];
+  if (layer.type === "fill") {
+    const color = /water/.test(id) ? c.water
+      : /park|wood|grass|glacier|ice/.test(id) ? c.park
+      : /building/.test(id) ? c.building
+      : /aeroway|pier/.test(id) ? c.road
+      : c.land;
+    return [["fill-color", color], ["fill-outline-color", "rgba(0,0,0,0)"]];
+  }
+  if (layer.type === "line") {
+    const color = /waterway/.test(id) ? c.water
+      : /boundary/.test(id) ? c.boundary
+      : /motorway|major|trunk|primary/.test(id) ? c.roadMajor
+      : c.road;
+    return [["line-color", color]];
+  }
+  if (layer.type === "symbol") return [["text-color", c.label], ["text-halo-color", c.halo], ["icon-opacity", 0.5]];
+  return [];
 }
 
-/** A MapLibre map that calls onReady once its style has loaded (and again after a style change). */
+/** Recolour a running map to a theme. */
+export function tintMap(m: MlMap, t: Theme) {
+  for (const layer of (m.getStyle().layers || []) as Layer[]) {
+    for (const [prop, value] of tintRules(layer, t)) {
+      try {
+        m.setPaintProperty(layer.id, prop, value);
+      } catch {
+        /* layer has no such property */
+      }
+    }
+  }
+}
+
+let baseStyle: Promise<any> | null = null;
+
+/** Fetch the base style once and recolour it before the map draws, so there's no flash. */
+async function themedStyle(t: Theme): Promise<any> {
+  baseStyle ??= fetch(BASE_STYLE).then((r) => {
+    if (!r.ok) throw new Error("style");
+    return r.json();
+  });
+  const style = structuredClone(await baseStyle);
+  for (const layer of style.layers as Layer[]) {
+    for (const [prop, value] of tintRules(layer, t)) {
+      if (prop === "icon-opacity" && layer.type !== "symbol") continue;
+      layer.paint = { ...(layer.paint || {}), [prop]: value };
+    }
+  }
+  return style;
+}
+
+/** A MapLibre map that calls onReady once its style has loaded, and onTheme when the look changes. */
 export default function MapView({
   onReady,
-  style,
+  onRetheme,
   center = [-98, 39],
   zoom = 3,
 }: {
   onReady: (m: MlMap) => void;
-  style?: MapStyle;
+  onRetheme?: (m: MlMap) => void;
   center?: [number, number];
   zoom?: number;
 }) {
   const el = useRef<HTMLDivElement>(null);
-  const map = useRef<MlMap | null>(null);
   const ready = useRef(onReady);
   ready.current = onReady;
+  const retheme = useRef(onRetheme);
+  retheme.current = onRetheme;
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!el.current) return;
-    const m = new maplibregl.Map({
-      container: el.current,
-      style: STYLES[style || (prefersDark() ? "dark" : "light")],
-      center,
-      zoom,
-      attributionControl: { compact: true },
+    let m: MlMap | null = null;
+    let gone = false;
+    const off = onTheme((t) => {
+      if (!m || !m.isStyleLoaded()) return;
+      tintMap(m, t);
+      retheme.current?.(m);
     });
-    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
-    m.on("style.load", () => ready.current(m));
-    m.on("error", (e) => {
-      if (String(e?.error?.message || "").includes("style")) setFailed(true);
-    });
-    map.current = m;
-    return () => m.remove();
+    themedStyle(currentTheme())
+      .catch(() => {
+        setFailed(true);
+        return BASE_STYLE;
+      })
+      .then((style) => {
+        if (gone || !el.current) return;
+        m = new maplibregl.Map({
+          container: el.current,
+          style,
+          center,
+          zoom,
+          attributionControl: { compact: true },
+        });
+        m.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+        m.on("style.load", () => {
+          tintMap(m!, currentTheme());
+          ready.current(m!);
+        });
+      });
+    return () => {
+      gone = true;
+      off();
+      m?.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (map.current && style) map.current.setStyle(STYLES[style]);
-  }, [style]);
 
   return (
     <>
@@ -65,23 +129,6 @@ export default function MapView({
       )}
     </>
   );
-}
-
-export const TYPE_COLOR: Record<string, string> = {
-  repeater: "#3fb8a0",
-  room: "#9d8cf2",
-  companion: "#5b9cf0",
-  sensor: "#e3a33b",
-  unknown: "#8a929c",
-};
-
-export function snrColor(snr: number | null | undefined): string {
-  if (snr == null) return "#8a929c";
-  if (snr >= 5) return "#2fb36b";
-  if (snr >= 0) return "#9ccc4a";
-  if (snr >= -5) return "#e3a33b";
-  if (snr >= -10) return "#e8743b";
-  return "#ef5d5d";
 }
 
 export function fitTo(m: MlMap, pts: [number, number][], padding: number | maplibregl.PaddingOptions = 60) {

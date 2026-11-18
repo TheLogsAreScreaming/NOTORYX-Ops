@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MlMap, GeoJSONSource } from "maplibre-gl";
-import MapView, { TYPE_COLOR, fitTo, snrColor } from "../components/MapView";
+import MapView, { fitTo } from "../components/MapView";
+import { currentTheme, nodeColor, onTheme, routeColor, snrColor } from "../themes";
 import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, makeResolver, useApi, useLive } from "../api";
 
 const ROUTE_MS = 2600;
-const ROUTE_COLOR: Record<string, string> = {
-  advert: "#3fb8a0",
-  group_text: "#5b9cf0",
-  text: "#9d8cf2",
-  request: "#9d8cf2",
-  response: "#9d8cf2",
-  ack: "#8a929c",
-  trace: "#e3a33b",
-};
 const SPEEDS = [1, 10, 60, 300];
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
@@ -55,6 +47,8 @@ export default function LiveMap() {
   const [speed, setSpeed] = useState(60);
   const [paused, setPaused] = useState(false);
   const [ready, setReady] = useState(false);
+  const [, setLook] = useState(0);
+  useEffect(() => onTheme(() => setLook((x) => x + 1)), []);
   const map = useRef<MlMap | null>(null);
   const routes = useRef<Route[]>([]);
   const pings = useRef<{ at: [number, number]; born: number; color: string }[]>([]);
@@ -81,7 +75,7 @@ export default function LiveMap() {
         }
       }
     }
-    const color = ROUTE_COLOR[p.ptype] || "#8a929c";
+    const color = routeColor(p.ptype);
     const now = performance.now();
     if (pts.length >= 2) routes.current.push({ coords: pts, born: now, color });
     else if (pts.length === 1) pings.current.push({ at: pts[0], born: now, color });
@@ -110,7 +104,7 @@ export default function LiveMap() {
             key: n.public_key,
             name: n.name || n.public_key.slice(0, 8),
             type: n.node_type || "unknown",
-            color: TYPE_COLOR[n.node_type || "unknown"] || TYPE_COLOR.unknown,
+            color: nodeColor(n.node_type),
             owned: f ? (down ? 2 : 1) : 0,
             big: n.node_type === "repeater" || n.node_type === "room" ? 1 : 0,
           },
@@ -141,13 +135,14 @@ export default function LiveMap() {
     set("nodes", nodeFc);
     set("routes", EMPTY);
     set("pings", EMPTY);
+    const t = currentTheme();
     if (!m.getLayer("links")) {
       m.addLayer({ id: "links", type: "line", source: "links", paint: { "line-color": ["get", "color"], "line-width": ["get", "w"], "line-opacity": 0.55, "line-dasharray": [2, 1.5] } });
       m.addLayer({ id: "routes", type: "line", source: "routes", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": ["get", "o"] } });
       m.addLayer({ id: "pings", type: "circle", source: "pings", paint: { "circle-radius": ["get", "r"], "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2, "circle-stroke-opacity": ["get", "o"] } });
-      m.addLayer({ id: "owned", type: "circle", source: "nodes", filter: [">", ["get", "owned"], 0], paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 2.5, "circle-stroke-color": ["case", ["==", ["get", "owned"], 2], "#ef5d5d", "#3fb8a0"] } });
-      m.addLayer({ id: "nodes", type: "circle", source: "nodes", paint: { "circle-radius": ["case", ["==", ["get", "big"], 1], 7, 4.5], "circle-color": ["get", "color"], "circle-stroke-color": "#0f1216", "circle-stroke-width": 1 } });
-      m.addLayer({ id: "labels", type: "symbol", source: "nodes", filter: ["==", ["get", "big"], 1], minzoom: 9, layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.4], "text-anchor": "top" }, paint: { "text-color": "#8f99a6", "text-halo-color": "rgba(0,0,0,0.6)", "text-halo-width": 1 } });
+      m.addLayer({ id: "owned", type: "circle", source: "nodes", filter: [">", ["get", "owned"], 0], paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 2.5, "circle-stroke-color": ["case", ["==", ["get", "owned"], 2], t.ui.bad, t.ui.accent] } });
+      m.addLayer({ id: "nodes", type: "circle", source: "nodes", paint: { "circle-radius": ["case", ["==", ["get", "big"], 1], 7, 4.5], "circle-color": ["get", "color"], "circle-stroke-color": t.map.land, "circle-stroke-width": 1.5 } });
+      m.addLayer({ id: "labels", type: "symbol", source: "nodes", filter: ["==", ["get", "big"], 1], minzoom: 9, layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.4], "text-anchor": "top" }, paint: { "text-color": t.map.label, "text-halo-color": t.map.halo, "text-halo-width": 1.2 } });
       m.on("click", "nodes", (e) => {
         const f = e.features?.[0];
         if (!f) return;
@@ -162,6 +157,10 @@ export default function LiveMap() {
       m.on("mouseenter", "nodes", () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", "nodes", () => (m.getCanvas().style.cursor = ""));
     }
+    m.setPaintProperty("owned", "circle-stroke-color", ["case", ["==", ["get", "owned"], 2], t.ui.bad, t.ui.accent]);
+    m.setPaintProperty("nodes", "circle-stroke-color", t.map.land);
+    m.setPaintProperty("labels", "text-color", t.map.label);
+    m.setPaintProperty("labels", "text-halo-color", t.map.halo);
     if (!fitted.current && located.length) {
       fitted.current = true;
       fitTo(m, located.map((n) => [n.lon!, n.lat!]), { top: 40, bottom: 80, left: 200, right: 380 });
@@ -249,6 +248,7 @@ export default function LiveMap() {
   return (
     <div className="mapwrap">
       <MapView
+        onRetheme={(m) => drawStatic(m)}
         onReady={(m) => {
           map.current = m;
           drawStatic(m);
@@ -256,11 +256,11 @@ export default function LiveMap() {
         }}
       />
       <div className="overlay legend" aria-label="Map key">
-        <span><span className="dot" style={{ background: TYPE_COLOR.repeater }} />Repeater</span>
-        <span><span className="dot" style={{ background: TYPE_COLOR.room }} />Room server</span>
-        <span><span className="dot" style={{ background: TYPE_COLOR.companion }} />Companion</span>
-        <span><span className="dot" style={{ border: "2px solid #3fb8a0", width: 12, height: 12 }} />Your repeater</span>
-        <span><span className="dot" style={{ border: "2px solid #ef5d5d", width: 12, height: 12 }} />Yours, quiet</span>
+        <span><span className="dot" style={{ background: nodeColor("repeater") }} />Repeater</span>
+        <span><span className="dot" style={{ background: nodeColor("room") }} />Room server</span>
+        <span><span className="dot" style={{ background: nodeColor("companion") }} />Companion</span>
+        <span><span className="dot" style={{ border: "2px solid var(--accent)", width: 12, height: 12 }} />Your repeater</span>
+        <span><span className="dot" style={{ border: "2px solid var(--bad)", width: 12, height: 12 }} />Yours, quiet</span>
         <span className="faint">Dashed lines: links (colour = SNR)</span>
       </div>
       <div className="overlay feed" aria-live="polite">
