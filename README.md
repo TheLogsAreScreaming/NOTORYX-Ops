@@ -33,7 +33,7 @@ Demo mode fills the dashboard with made-up traffic and a pretend fleet. Nothing 
 | `src/notoryx_ops/server.py` | Web API and live updates |
 | `web/` | Dashboard (React, MapLibre, uPlot) |
 | `packaging/` | Docker and Raspberry Pi installer |
-| `macos/` | Mac app launcher |
+| `macos/` | Native Mac app (Swift window around the dashboard) |
 
 ## Development
 

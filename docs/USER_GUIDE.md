@@ -16,7 +16,8 @@ Logs: `journalctl -u notoryx-ops -f`
 1. Install Python 3.10 or newer from python.org if you don't have it.
 2. Download `notoryx-ops-<version>-mac.zip`, unzip it and move **NOTORYX Ops** to Applications.
 3. The app isn't signed yet: the first time, right-click it and choose **Open**.
-4. It sets itself up on first launch, starts the station and opens the dashboard. It has no window or Dock icon; open the app again to get back to the dashboard, and use **Stop station** on the Station page to stop it.
+4. It sets itself up on first launch (about a minute), starts the station and shows the dashboard in its own window. Closing the window keeps the station running; click the Dock icon to bring it back. **Quit** (Cmd-Q) stops the station. **Stop station** on the Station page stops it too and offers to start it again.
+5. The NOTORYX Ops menu has Edit Settings, Show Station Log and Start or Restart Station. The Go menu jumps to each page (Cmd-1 to Cmd-9), and View has zoom, reload and Open in Browser.
 
 Settings: `~/Library/Application Support/NOTORYX Ops/config.toml`. Log: `station.log` in the same folder.
 
