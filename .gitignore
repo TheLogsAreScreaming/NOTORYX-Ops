@@ -9,3 +9,9 @@ build/
 *.sqlite
 .env
 config.local.*
+src/notoryx_ops/web/
+web/dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+data/
