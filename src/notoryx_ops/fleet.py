@@ -111,7 +111,7 @@ class Fleet:
         for r in self.store.repeaters():
             last = self.store.latest_status(r["id"])
             ok = self.store.latest_status(r["id"], ok_only=True)
-            node = self.store.one("SELECT name, lat, lon, last_seen, prefix FROM nodes WHERE public_key = ?",
+            node = self.store.one("SELECT name, lat, lon, last_advert, prefix FROM nodes WHERE public_key = ?",
                                   (r["public_key"],))
             fw = self.store.one("SELECT firmware FROM repeater_status WHERE repeater_id = ? AND firmware IS NOT NULL"
                                 " ORDER BY polled_at DESC LIMIT 1", (r["id"],))
@@ -119,7 +119,7 @@ class Fleet:
                                   (r["public_key"],))
             out.append({**r, "last_poll": last, "last_ok": ok, "node": node,
                         "firmware": (fw or {}).get("firmware"), "alerts": alerts,
-                        "last_heard": max([t for t in ((node or {}).get("last_seen"), (ok or {}).get("polled_at")) if t] or [0]) or None,
+                        "last_heard": max([t for t in ((node or {}).get("last_advert"), (ok or {}).get("polled_at")) if t] or [0]) or None,
                         "now": now})
         return out
 
@@ -160,6 +160,7 @@ class Fleet:
                     if n:
                         await asyncio.sleep(self.cfg.stagger_seconds)
                     await self.poll_one(rep)
+                    self.alerts.evaluate()
                 self.last_round = time.time()
             finally:
                 self.polling = False

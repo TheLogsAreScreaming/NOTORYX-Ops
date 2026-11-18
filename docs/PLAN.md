@@ -1,6 +1,6 @@
 # NOTORYX Ops plan
 
-Status: draft, 2026-11-18. Nothing built yet.
+Status: 2026-11-18. Milestones 1-5 built in the first version (0.1.0), not yet tested with a real radio.
 
 ## Parts
 
@@ -29,11 +29,19 @@ Status: draft, 2026-11-18. Nothing built yet.
 - **Clean-room.** Write our own code. Borrow ideas, never code, from other mesh dashboards, and never name them in this repo.
 - **Releases** go to NOTORYX-Ops-Releases only.
 
-## Open decisions
+## Decisions
 
-- Stack for the station: Python (fits existing radio libraries) or Go (single binary).
-- License.
-- Whether the Core Fleet tab ships before the station.
+- Station: Python (MeshCore Python library for the radio, FastAPI, SQLite, MQTT client).
+- Dashboard: React + TypeScript + Vite, MapLibre with free OpenStreetMap tiles, uPlot charts.
+- License: MIT, so code can move into the MIT NOTORYX apps.
+- Order: the station first; the Core Fleet tab comes next and syncs from it.
+
+## Still to do
+
+- Test with a real companion radio (USB, Bluetooth, TCP) and real repeaters you own.
+- Test against a real MQTT observer feed.
+- Fleet tab in NOTORYX Core that syncs from a station.
+- Signed Mac app.
 
 ## Milestones
 

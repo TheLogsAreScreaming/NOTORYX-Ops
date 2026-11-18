@@ -63,9 +63,9 @@ class Alerts:
             if not rep["enabled"]:
                 continue
             subj, name = rep["public_key"], rep["name"]
-            node = self.store.one("SELECT last_seen FROM nodes WHERE public_key = ?", (subj,))
+            node = self.store.one("SELECT last_advert FROM nodes WHERE public_key = ?", (subj,))
             ok = self.store.latest_status(rep["id"], ok_only=True)
-            heard = max([t for t in ((node or {}).get("last_seen"), (ok or {}).get("polled_at")) if t] or [0])
+            heard = max([t for t in ((node or {}).get("last_advert"), (ok or {}).get("polled_at")) if t] or [0])
             if heard == 0:
                 pass  # never heard yet, nothing to compare
             elif now - heard > cfg.quiet_hours * 3600:

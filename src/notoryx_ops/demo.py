@@ -76,7 +76,7 @@ class DemoNetwork:
         return decoder.encode_packet(1, 0x05, self._path(self.rng.randint(0, 4)), payload)
 
     def direct(self) -> bytes:
-        a, b = self.rng.sample(self.nodes, 2)
+        a, b = self.rng.sample([n for n in self.nodes if n is not self.repeaters[0]], 2)
         payload = a["key"][:1] + b["key"][:1] + bytes(self.rng.getrandbits(8) for _ in range(18))
         ptype = self.rng.choice([0x02, 0x02, 0x00, 0x01])
         return decoder.encode_packet(2, ptype, self._path(self.rng.randint(1, 3)), payload)
@@ -126,6 +126,7 @@ class DemoRadio:
         self.state = "connected"
         self.cfg = None
         self._battery = {n["key"].hex(): 4150 - i * 220 for i, n in enumerate(net.fleet)}
+        self._since = time.time()
 
     enabled = True
     connected = True
@@ -133,7 +134,7 @@ class DemoRadio:
 
     def info(self) -> dict[str, Any]:
         return {"transport": "demo", "state": "connected", "error": None, "name": "Demo station radio",
-                "public_key": _key("station").hex(), "lat": CENTER[0], "lon": CENTER[1], "connected_at": time.time()}
+                "public_key": _key("station").hex(), "lat": CENTER[0], "lon": CENTER[1], "connected_at": self._since}
 
     def start(self) -> None:
         pass

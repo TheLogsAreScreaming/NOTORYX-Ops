@@ -6,6 +6,8 @@ import asyncio
 import hmac
 import ipaddress
 import json
+import os
+import signal
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -99,6 +101,12 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/station")
     def station_info():
         return st.info()
+
+    @app.post("/api/station/stop", dependencies=[Depends(may_change)])
+    async def station_stop():
+        """Stop the station process. The Mac app has no window, so the dashboard offers this."""
+        asyncio.get_running_loop().call_later(0.5, os.kill, os.getpid(), signal.SIGINT)
+        return {"stopping": True}
 
     @app.get("/api/overview")
     def overview():

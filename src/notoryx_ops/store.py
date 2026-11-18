@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   first_seen REAL NOT NULL,
   last_seen REAL NOT NULL,
   advert_ts INTEGER,
+  last_advert REAL,
   adverts INTEGER NOT NULL DEFAULT 0,
   best_snr REAL,
   direct_observers TEXT NOT NULL DEFAULT '[]'
@@ -140,12 +141,22 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA foreign_keys=ON")
+        self._add_missing_columns()
         self.db.executescript(SCHEMA)
         self.db.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),)
         )
         if new and self.path != ":memory:":
             os.chmod(self.path, 0o600)
+
+    def _add_missing_columns(self) -> None:
+        """Bring an older database up to date before the schema script runs."""
+        tables = {r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if "nodes" in tables:
+            cols = {r[1] for r in self.db.execute("PRAGMA table_info(nodes)")}
+            if "last_advert" not in cols:
+                self.db.execute("ALTER TABLE nodes ADD COLUMN last_advert REAL")
+                self.db.execute("UPDATE nodes SET last_advert = last_seen")
 
     # ---- helpers -------------------------------------------------------
     def q(self, sql: str, args: tuple | list = ()) -> list[dict[str, Any]]:
@@ -220,8 +231,8 @@ class Store:
             obs = [direct_observer] if direct_observer else []
             self.x(
                 "INSERT INTO nodes(public_key, prefix, name, node_type, lat, lon, first_seen, last_seen,"
-                " advert_ts, adverts, best_snr, direct_observers) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)",
-                (key, key[:2], name, node_type, lat, lon, now, now, advert_ts, snr, json.dumps(obs)),
+                " advert_ts, last_advert, adverts, best_snr, direct_observers) VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)",
+                (key, key[:2], name, node_type, lat, lon, now, now, advert_ts, now, snr, json.dumps(obs)),
             )
             return
         obs = json.loads(cur["direct_observers"])
@@ -232,13 +243,18 @@ class Store:
             best = snr
         self.x(
             "UPDATE nodes SET name = COALESCE(?, name), node_type = COALESCE(?, node_type),"
-            " lat = COALESCE(?, lat), lon = COALESCE(?, lon), last_seen = ?, advert_ts = MAX(COALESCE(advert_ts,0), ?),"
+            " lat = COALESCE(?, lat), lon = COALESCE(?, lon), last_seen = MAX(last_seen, ?),"
+            " last_advert = MAX(COALESCE(last_advert, 0), ?), advert_ts = MAX(COALESCE(advert_ts,0), ?),"
             " adverts = adverts + 1, best_snr = ?, direct_observers = ? WHERE public_key = ?",
-            (name, node_type, lat, lon, now, advert_ts or 0, best, json.dumps(obs), key),
+            (name, node_type, lat, lon, now, now, advert_ts or 0, best, json.dumps(obs), key),
         )
 
     def touch_prefix(self, prefix: str, now: float) -> None:
-        """Mark a node as heard when only its hash shows up (as a sender or a hop)."""
+        """Mark a node as probably heard when only its hash shows up (as a sender or a hop).
+
+        One byte can belong to several nodes, so this only feeds the map's "last heard",
+        never the fleet's quiet check, which uses full-key adverts and status polls.
+        """
         rows = self.q("SELECT public_key FROM nodes WHERE prefix = ?", (prefix[:2],))
         if len(rows) == 1:
             self.x("UPDATE nodes SET last_seen = MAX(last_seen, ?) WHERE public_key = ?", (now, rows[0]["public_key"]))

@@ -166,3 +166,30 @@ def test_prune_keeps_recent(env):
     ing.handle(advert(key(0x50), "New"), "Obs", "radio")
     store.prune(14, 365)
     assert store.one("SELECT COUNT(*) n FROM packets")["n"] == 1
+
+
+def test_shared_prefix_does_not_hide_a_quiet_repeater(env):
+    cfg, store, hub, ing = env
+    fleet = Fleet(cfg, store, radio=None, alerts=Alerts(cfg, store, hub), hub=hub)
+    old = time.time() - 6 * 3600
+    ing.handle(advert(key(0x4F), "Ridge"), "Obs", "radio", received_at=old)
+    fleet.add(key(0x4F).hex(), "Ridge")
+    # a direct message from some other node whose hash is also 4F, and a relay through "4F"
+    ing.handle(decoder.encode_packet(2, 0x02, [b"\x4f"], b"\x01\x4f" + bytes(18)), "Obs", "radio")
+    fleet.alerts.evaluate()
+    assert store.open_alert("quiet", key(0x4F).hex())
+
+
+def test_old_database_gets_new_columns(tmp_path):
+    import sqlite3
+
+    path = tmp_path / "old.sqlite"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE nodes (public_key TEXT PRIMARY KEY, prefix TEXT NOT NULL, name TEXT, node_type TEXT,"
+               " lat REAL, lon REAL, first_seen REAL NOT NULL, last_seen REAL NOT NULL, advert_ts INTEGER,"
+               " adverts INTEGER NOT NULL DEFAULT 0, best_snr REAL, direct_observers TEXT NOT NULL DEFAULT '[]')")
+    db.execute("INSERT INTO nodes VALUES ('ab', 'ab', 'x', 'repeater', NULL, NULL, 1, 5, 0, 1, NULL, '[]')")
+    db.commit()
+    db.close()
+    st = Store(path)
+    assert st.one("SELECT last_advert FROM nodes")["last_advert"] == 5
