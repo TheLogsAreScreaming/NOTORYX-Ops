@@ -29,7 +29,9 @@ Settings: `~/Library/Application Support/NOTORYX Ops/config.toml`. Log: `station
 
 ## Settings
 
-The settings file is created with comments the first time the station starts. The main parts:
+Open **Settings** in the sidebar (Cmd-, in the Mac app). It has the look, the radio (with **Find ports** for USB and **Scan** for Bluetooth), channels, fleet checks, alerts (with **Send a test alert**), MQTT brokers, station and access. **Save** applies changes right away; only the listen address and port wait for a restart. Passwords, tokens and webhook links are never shown again after saving.
+
+Everything is stored in a settings file you can also edit by hand. The main parts:
 
 | Section | What to set |
 |---|---|
@@ -40,7 +42,7 @@ The settings file is created with comments the first time the station starts. Th
 | `[alerts]` | Discord webhook URL, generic webhook URL and its signing secret |
 | `[[mqtt]]` | One block per broker that carries observer packets |
 
-Restart the station after editing.
+Restart the station after editing the file by hand.
 
 ## Pages
 
@@ -52,7 +54,8 @@ Restart the station after editing.
 - **Coverage:** hexes where a node was heard directly, coloured by best SNR, and nodes far from every known repeater.
 - **Analytics:** totals, a weekday-by-hour activity map, packet types, busiest relays and senders, and the 256 one-byte prefixes with clashes and free ones.
 - **Alerts:** open and cleared alerts. Alerts clear on their own once the problem is gone.
-- **Station:** radio and broker state, decoding counts, admin token, theme and stop.
+- **Station:** radio and broker state, decoding counts, fleet check timing, and Stop station.
+- **Settings:** everything you can change. See above.
 
 ## Airtime
 

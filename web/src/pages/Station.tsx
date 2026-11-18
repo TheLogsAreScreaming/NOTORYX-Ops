@@ -1,13 +1,10 @@
-import { useState } from "react";
-import { ago, api, getToken, setToken, useApi } from "../api";
-import { LookGallery } from "../components/ThemePicker";
+import { Link } from "react-router-dom";
+import { ago, api, useApi } from "../api";
 
 const STATE: Record<string, string> = { connected: "ok", connecting: "warn", disconnected: "bad", error: "bad", off: "plain" };
 
 export default function Station() {
   const { data: s, error } = useApi<any>("/api/station", 5000);
-  const [tok, setTok] = useState(getToken());
-  const [saved, setSaved] = useState(false);
   if (error) return <div className="err">{error}</div>;
   if (!s) return <div className="empty">Loading…</div>;
   const r = s.radio;
@@ -28,11 +25,6 @@ export default function Station() {
         </button>
       </div>
       {s.demo && <div className="note" style={{ marginBottom: 14 }}>Demo mode: everything on the dashboard is made-up traffic. No radio is used.</div>}
-      <div className="card">
-        <h2>Look</h2>
-        <div className="small muted" style={{ marginBottom: 10 }}>Pick a look for the whole dashboard, map included. It's saved on this computer.</div>
-        <LookGallery />
-      </div>
       <div className="grid2">
         <div className="card">
           <h2>Radio <span className={`pill ${STATE[r.state] || "plain"}`}>{r.state}</span></h2>
@@ -46,11 +38,11 @@ export default function Station() {
               {r.error && <tr><th>Last error</th><td className="err">{r.error}</td></tr>}
             </tbody>
           </table>
-          {r.state === "off" && <div className="small muted" style={{ marginTop: 8 }}>No radio set. Set [radio] transport in the config file to serial, ble or tcp.</div>}
+          {r.state === "off" && <div className="small muted" style={{ marginTop: 8 }}>No radio set yet. Pick one in <Link to="/settings">Settings</Link>.</div>}
         </div>
         <div className="card">
           <h2>MQTT brokers</h2>
-          {s.mqtt.length === 0 && <div className="small muted">None. Add a [[mqtt]] block to the config file to read observer packets from a broker.</div>}
+          {s.mqtt.length === 0 && <div className="small muted">None. Add one in Settings to read packets from observers elsewhere on the mesh.</div>}
           {s.mqtt.map((m: any) => (
             <div key={m.name} className="stack" style={{ marginBottom: 8 }}>
               <div className="row"><strong>{m.name}</strong><span className={`pill ${STATE[m.state] || "plain"}`}>{m.state}</span></div>
@@ -83,22 +75,9 @@ export default function Station() {
           <div className="small faint" style={{ marginTop: 8 }}>Each poll sends a login and a status request over the air. Firmware is checked once a day and neighbours every 6 hours.</div>
         </div>
         <div className="card">
-          <h2>Admin token</h2>
-          <div className="small muted" style={{ marginBottom: 8 }}>
-            {s.changes_need_token
-              ? "This station needs its admin token for changes (fleet, bulk settings, alerts). It's kept in this browser only."
-              : "No admin token set, so changes only work from the station computer itself."}
-          </div>
-          <form className="row" onSubmit={(e) => (e.preventDefault(), setToken(tok.trim()), setSaved(true))}>
-            <input type="password" value={tok} onChange={(e) => (setTok(e.target.value), setSaved(false))} placeholder="Admin token" aria-label="Admin token" style={{ flex: 1 }} autoComplete="off" />
-            <button type="submit">Save</button>
-          </form>
-          {saved && <div className="small" style={{ color: "var(--ok)", marginTop: 6 }}>Saved in this browser.</div>}
-        </div>
-        <div className="card">
-          <h2>Settings file</h2>
-          <div className="mono small" style={{ wordBreak: "break-all" }}>{s.config_path}</div>
-          <div className="small muted" style={{ marginTop: 6 }}>Edit it and restart the station to change the radio, brokers, channels, polling or alerts.</div>
+          <h2>Settings</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>Radio, channels, fleet checks, alerts, brokers, access and the look are all on the Settings page.</div>
+          <Link to="/settings"><button>Open Settings</button></Link>
         </div>
       </div>
     </>
