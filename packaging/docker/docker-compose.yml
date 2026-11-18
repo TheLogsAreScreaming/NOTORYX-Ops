@@ -1,0 +1,11 @@
+services:
+  notoryx-ops:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8484:8484"
+    volumes:
+      - ./data:/data
+    # For a USB radio, uncomment and set the device:
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0

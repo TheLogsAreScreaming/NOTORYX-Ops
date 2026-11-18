@@ -1,0 +1,52 @@
+name: Release build
+
+# Builds every download for one version. Publishing to NOTORYX-Ops-Releases is done
+# by hand from the artifact, as the repo owner.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dashboard
+        run: cd web && npm ci && npm run build
+      - name: Tests
+        run: pip install -e ".[dev]" && pytest -q
+      - name: Wheel
+        run: |
+          rm -rf src/notoryx_ops/web && cp -R web/dist src/notoryx_ops/web
+          pip install build
+          python -m build --wheel --sdist --outdir dist
+          VERSION=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          unzip -l dist/*.whl | grep -q "notoryx_ops/web/index.html"
+      - name: Bundles
+        run: |
+          mkdir -p out
+          V=$VERSION
+          WHL=$(ls dist/*.whl)
+          cp "$WHL" out/
+          cp dist/*.tar.gz out/notoryx-ops-$V-source.tar.gz
+          mkdir -p pi/notoryx-ops-$V-pi && cp "$WHL" packaging/pi/install.sh pi/notoryx-ops-$V-pi/
+          tar -C pi -czf out/notoryx-ops-$V-pi.tar.gz notoryx-ops-$V-pi
+          mkdir -p dk/notoryx-ops-$V-docker && cp "$WHL" packaging/docker/Dockerfile packaging/docker/docker-compose.yml dk/notoryx-ops-$V-docker/
+          (cd dk && zip -qr ../out/notoryx-ops-$V-docker.zip notoryx-ops-$V-docker)
+          mkdir -p mac && macos/build-app.sh "$WHL" mac
+          (cd mac && zip -qry ../out/notoryx-ops-$V-mac.zip "NOTORYX Ops.app")
+          (cd out && sha256sum * > SHA256SUMS)
+          cat out/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notoryx-ops-${{ env.VERSION }}
+          path: out/*
+          retention-days: 7
