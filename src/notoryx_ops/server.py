@@ -281,7 +281,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         try:
             while True:
                 try:
-                    ev = await asyncio.wait_for(q.get(), timeout=25)
+                    ev = await asyncio.wait_for(q.get(), timeout=8)
                 except asyncio.TimeoutError:
                     ev = {"type": "ping", "t": time.time()}
                 await sock.send_json(ev)

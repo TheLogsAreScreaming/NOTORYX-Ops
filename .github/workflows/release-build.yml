@@ -23,12 +23,14 @@ jobs:
       - name: Tests
         run: pip install -e ".[dev]" && pytest -q
       - name: Wheel
+        id: wheel
         run: |
           rm -rf src/notoryx_ops/web && cp -R web/dist src/notoryx_ops/web
           pip install build
           python -m build --wheel --sdist --outdir dist
           VERSION=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           unzip -l dist/*.whl | grep -q "notoryx_ops/web/index.html"
       - name: Bundles
         run: |
@@ -41,12 +43,49 @@ jobs:
           tar -C pi -czf out/notoryx-ops-$V-pi.tar.gz notoryx-ops-$V-pi
           mkdir -p dk/notoryx-ops-$V-docker && cp "$WHL" packaging/docker/Dockerfile packaging/docker/docker-compose.yml dk/notoryx-ops-$V-docker/
           (cd dk && zip -qr ../out/notoryx-ops-$V-docker.zip notoryx-ops-$V-docker)
-          mkdir -p mac && macos/build-app.sh "$WHL" mac
-          (cd mac && zip -qry ../out/notoryx-ops-$V-mac.zip "NOTORYX Ops.app")
-          (cd out && sha256sum * > SHA256SUMS)
-          cat out/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: notoryx-ops-${{ env.VERSION }}
+          name: parts-linux
+          path: out/*
+          retention-days: 2
+    outputs:
+      version: ${{ steps.wheel.outputs.version }}
+
+  mac:
+    needs: build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: parts-linux
+          path: parts
+      - name: Mac app
+        run: |
+          V=${{ needs.build.outputs.version }}
+          mkdir -p mac out
+          macos/build-app.sh parts/notoryx_ops-$V-py3-none-any.whl mac
+          lipo -archs "mac/NOTORYX Ops.app/Contents/MacOS/NOTORYX Ops"
+          codesign -v "mac/NOTORYX Ops.app"
+          ditto -c -k --keepParent "mac/NOTORYX Ops.app" out/notoryx-ops-$V-mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parts-mac
+          path: out/*
+          retention-days: 2
+
+  collect:
+    needs: [build, mac]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: parts-*
+          merge-multiple: true
+          path: out
+      - run: cd out && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notoryx-ops-${{ needs.build.outputs.version }}
           path: out/*
           retention-days: 7
