@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder
+from . import analytics, decoder, settings
 from .channels import decrypt_group_text
 from .config import Config
 from .fleet import BULK_SETTINGS
@@ -255,7 +255,44 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     async def bulk_apply(body: BulkIn):
         return await st.fleet.bulk_apply(body.ids, body.key, body.value, body.confirm)
 
+    # ---- settings -------------------------------------------------------------
+    @app.get("/api/settings")
+    def settings_get():
+        return settings.public_view(cfg)
+
+    @app.put("/api/settings", dependencies=[Depends(may_change)])
+    async def settings_put(body: dict[str, Any]):
+        restart = await st.apply_settings(body)
+        return {"saved": True, "restart_needed": restart, "settings": settings.public_view(cfg)}
+
+    @app.get("/api/settings/serial-ports", dependencies=[Depends(may_change)])
+    def settings_serial():
+        return settings.serial_ports()
+
+    @app.get("/api/settings/ble-scan", dependencies=[Depends(may_change)])
+    async def settings_ble():
+        try:
+            return await settings.ble_devices()
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(503, f"Bluetooth scan failed: {exc}. Check that Bluetooth is on and allowed for NOTORYX Ops.") from exc
+
     # ---- alerts ---------------------------------------------------------------
+    @app.post("/api/alerts/test", dependencies=[Depends(may_change)])
+    async def alert_test():
+        if not (cfg.discord_webhook or cfg.webhook_url):
+            raise HTTPException(400, "Add a Discord webhook or a webhook URL first.")
+        from .alerts import post_json
+
+        out = {}
+        if cfg.discord_webhook:
+            out["discord"] = await asyncio.to_thread(
+                post_json, cfg.discord_webhook, {"content": f"✅ {cfg.name}: test alert from NOTORYX Ops"}, None)
+        if cfg.webhook_url:
+            out["webhook"] = await asyncio.to_thread(
+                post_json, cfg.webhook_url, {"event": "test", "station": cfg.name, "message": "Test alert from NOTORYX Ops"},
+                cfg.webhook_secret or None)
+        return out
+
     @app.get("/api/alerts")
     def alerts(open: bool = False, limit: int = 200):
         sql = "SELECT * FROM alerts"

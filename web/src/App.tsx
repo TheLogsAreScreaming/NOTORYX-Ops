@@ -10,6 +10,7 @@ import Coverage from "./pages/Coverage";
 import Analytics from "./pages/Analytics";
 import Alerts from "./pages/Alerts";
 import Station from "./pages/Station";
+import Settings from "./pages/Settings";
 
 const NAV: [string, string][] = [
   ["/", "Live map"],
@@ -21,6 +22,7 @@ const NAV: [string, string][] = [
   ["/analytics", "Analytics"],
   ["/alerts", "Alerts"],
   ["/station", "Station"],
+  ["/settings", "Settings"],
 ];
 
 export default function App() {
@@ -64,6 +66,7 @@ export default function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/station" element={<Station />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<div className="empty">That page doesn't exist.</div>} />
         </Routes>
       </main>

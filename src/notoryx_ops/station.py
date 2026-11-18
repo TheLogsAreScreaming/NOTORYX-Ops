@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import asdict
 
-from . import __version__
+from . import __version__, settings
 from .alerts import Alerts
 from .channels import parse_channel
 from .config import Config
@@ -52,6 +53,40 @@ class Station:
         for m in self.mqtt:
             m.start(loop)
         self.fleet.start()
+
+    def _radio_key(self) -> tuple:
+        c = self.cfg
+        return (c.radio_transport, c.serial_port, c.baudrate, c.ble_address, c.tcp_host, c.tcp_port, c.observer_name)
+
+    async def apply_settings(self, data: dict) -> list[str]:
+        """Validate and save settings from the dashboard, then apply them without a restart where possible."""
+        radio_before = self._radio_key()
+        mqtt_before = [asdict(m) for m in self.cfg.mqtt]
+        restart = settings.apply_changes(self.cfg, data)
+        settings.save(self.cfg)
+
+        self.channels = []
+        for spec in self.cfg.channel_keys:
+            try:
+                self.channels.append(parse_channel(spec))
+            except ValueError as exc:
+                log.warning("skipping channel: %s", exc)
+        self.ingest.channels = self.channels
+
+        if not self.demo and self._radio_key() != radio_before:
+            await self.radio.stop()
+            self.radio = RadioLink(self.cfg, self.ingest)
+            self.fleet.radio = self.radio
+            self.radio.start()
+        if [asdict(m) for m in self.cfg.mqtt] != mqtt_before:
+            for m in self.mqtt:
+                m.stop()
+            self.mqtt = [MqttFeed(s, self.ingest) for s in self.cfg.mqtt]
+            loop = asyncio.get_running_loop()
+            for m in self.mqtt:
+                m.start(loop)
+        self.alerts.evaluate()
+        return restart
 
     async def stop(self) -> None:
         await self.radio.stop()

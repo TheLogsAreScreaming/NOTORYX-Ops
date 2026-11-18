@@ -327,7 +327,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if let u = URL(string: "http://127.0.0.1:\(port)/") { NSWorkspace.shared.open(u) }
     }
     @objc func showSettings(_ sender: Any?) { NSWorkspace.shared.activateFileViewerSelecting([configURL]) }
-    @objc func editSettings(_ sender: Any?) { NSWorkspace.shared.open(configURL) }
+    @objc func editSettings(_ sender: Any?) {
+        window.makeKeyAndOrderFront(nil)
+        if let u = URL(string: "http://127.0.0.1:\(port)/settings") { web.load(URLRequest(url: u)) }
+    }
     @objc func showLog(_ sender: Any?) { NSWorkspace.shared.activateFileViewerSelecting([logURL]) }
     @objc func showWindow(_ sender: Any?) { window.makeKeyAndOrderFront(nil) }
     @objc func zoomIn(_ sender: Any?) { web.pageZoom = min(web.pageZoom + 0.1, 2) }
@@ -358,7 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         sub(appName, [
             item("About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), "", [], target: NSApp),
             .separator(),
-            item("Edit Settings…", #selector(editSettings(_:)), ",", target: self),
+            item("Settings…", #selector(editSettings(_:)), ",", target: self),
             item("Show Settings File in Finder", #selector(showSettings(_:)), target: self),
             item("Show Station Log", #selector(showLog(_:)), target: self),
             item("Start or Restart Station", #selector(restartStation(_:)), target: self),
