@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { GeoJSONSource, Map as MlMap } from "maplibre-gl";
-import MapView, { fitTo, snrColor } from "../components/MapView";
+import MapView, { fitTo } from "../components/MapView";
+import { currentTheme, onTheme, snrColor } from "../themes";
 import { useApi } from "../api";
 
 const SIZES = [500, 1500, 5000];
@@ -12,6 +13,8 @@ export default function Coverage() {
   const map = useRef<MlMap | null>(null);
   const fitted = useRef(false);
   const [ready, setReady] = useState(false);
+  const [, setLook] = useState(0);
+  useEffect(() => onTheme(() => setLook((x) => x + 1)), []);
 
   function draw(m: MlMap) {
     if (!data) return;
@@ -33,8 +36,9 @@ export default function Coverage() {
     if (!m.getLayer("hexes")) {
       m.addLayer({ id: "hexes", type: "fill", source: "hexes", paint: { "fill-color": ["get", "color"], "fill-opacity": 0.45 } });
       m.addLayer({ id: "hex-lines", type: "line", source: "hexes", paint: { "line-color": ["get", "color"], "line-width": 1 } });
-      m.addLayer({ id: "gaps", type: "circle", source: "gaps", paint: { "circle-radius": 7, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": "#9d8cf2", "circle-stroke-width": 2.5 } });
+      m.addLayer({ id: "gaps", type: "circle", source: "gaps", paint: { "circle-radius": 7, "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": currentTheme().ui.accent2, "circle-stroke-width": 2.5 } });
     }
+    m.setPaintProperty("gaps", "circle-stroke-color", currentTheme().ui.accent2);
     const pts: [number, number][] = [
       ...data.features.flatMap((f: any) => f.geometry.coordinates[0]),
       ...data.gaps.map((g: any) => [g.lon, g.lat]),
@@ -52,11 +56,11 @@ export default function Coverage() {
 
   return (
     <div className="mapwrap">
-      <MapView onReady={(m) => ((map.current = m), draw(m), setReady(true))} />
+      <MapView onRetheme={(m) => draw(m)} onReady={(m) => ((map.current = m), draw(m), setReady(true))} />
       <div className="overlay" style={{ left: 12, top: 12, maxWidth: 320 }}>
         <strong>Coverage</strong>
         <div className="small muted" style={{ margin: "4px 0 8px" }}>
-          Places where a node was heard directly by an observer, coloured by the best SNR. Purple rings are nodes far from every known repeater: places a new repeater could help.
+          Places where a node was heard directly by an observer, coloured by the best SNR. Ringed points are nodes far from every known repeater: places a new repeater could help.
         </div>
         <div className="row small">
           <label>

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ago, api, getToken, setToken, useApi } from "../api";
+import { LookGallery } from "../components/ThemePicker";
 
 const STATE: Record<string, string> = { connected: "ok", connecting: "warn", disconnected: "bad", error: "bad", off: "plain" };
 
@@ -7,7 +8,6 @@ export default function Station() {
   const { data: s, error } = useApi<any>("/api/station", 5000);
   const [tok, setTok] = useState(getToken());
   const [saved, setSaved] = useState(false);
-  const [theme, setTheme] = useState(document.documentElement.dataset.theme || "");
   if (error) return <div className="err">{error}</div>;
   if (!s) return <div className="empty">Loading…</div>;
   const r = s.radio;
@@ -28,6 +28,11 @@ export default function Station() {
         </button>
       </div>
       {s.demo && <div className="note" style={{ marginBottom: 14 }}>Demo mode: everything on the dashboard is made-up traffic. No radio is used.</div>}
+      <div className="card">
+        <h2>Look</h2>
+        <div className="small muted" style={{ marginBottom: 10 }}>Pick a look for the whole dashboard, map included. It's saved on this computer.</div>
+        <LookGallery />
+      </div>
       <div className="grid2">
         <div className="card">
           <h2>Radio <span className={`pill ${STATE[r.state] || "plain"}`}>{r.state}</span></h2>
@@ -35,7 +40,7 @@ export default function Station() {
             <tbody>
               <tr><th>Connection</th><td>{r.transport}</td></tr>
               <tr><th>Radio name</th><td>{r.name || "—"}</td></tr>
-              <tr><th>Public key</th><td className="mono small" style={{ wordBreak: "break-all" }}>{r.public_key || "—"}</td></tr>
+              <tr><th>Public key</th><td className="mono small wrap">{r.public_key || "—"}</td></tr>
               <tr><th>Position</th><td>{r.lat ? `${r.lat}, ${r.lon}` : "—"}</td></tr>
               <tr><th>Connected</th><td>{ago(r.connected_at)}</td></tr>
               {r.error && <tr><th>Last error</th><td className="err">{r.error}</td></tr>}
@@ -94,28 +99,6 @@ export default function Station() {
           <h2>Settings file</h2>
           <div className="mono small" style={{ wordBreak: "break-all" }}>{s.config_path}</div>
           <div className="small muted" style={{ marginTop: 6 }}>Edit it and restart the station to change the radio, brokers, channels, polling or alerts.</div>
-          <div className="row" style={{ marginTop: 10 }}>
-            <span className="small">Theme</span>
-            <select
-              value={theme}
-              aria-label="Theme"
-              onChange={(e) => {
-                const v = e.target.value;
-                setTheme(v);
-                if (v) document.documentElement.dataset.theme = v;
-                else delete document.documentElement.dataset.theme;
-                try {
-                  localStorage.setItem("notoryx-ops-theme", v);
-                } catch {
-                  /* storage blocked */
-                }
-              }}
-            >
-              <option value="">Match system</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </div>
         </div>
       </div>
     </>

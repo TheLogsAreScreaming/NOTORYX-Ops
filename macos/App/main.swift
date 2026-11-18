@@ -107,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         let content = NSView(frame: frame)
         content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor(red: 0.06, green: 0.07, blue: 0.09, alpha: 1).cgColor
+        content.layer?.backgroundColor = NSColor(red: 0.055, green: 0.047, blue: 0.114, alpha: 1).cgColor
         content.addSubview(web)
 
         spinner = NSProgressIndicator()

@@ -50,7 +50,7 @@ export default function Analytics() {
           {(ov?.types_24h || []).map((t: any) => (
             <div key={t.ptype} className="row" style={{ flexWrap: "nowrap", marginBottom: 4 }}>
               <span style={{ width: 90 }}>{TYPE_LABEL[t.ptype] || t.ptype}</span>
-              <div className="bar" style={{ flex: 1 }}><i style={{ width: `${(t.n / maxType) * 100}%`, background: "var(--blue)" }} /></div>
+              <div className="bar" style={{ flex: 1 }}><i style={{ width: `${(t.n / maxType) * 100}%`, background: "linear-gradient(90deg, var(--accent), var(--accent-2))" }} /></div>
               <span className="mono small" style={{ width: 50, textAlign: "right" }}>{t.n}</span>
             </div>
           ))}
