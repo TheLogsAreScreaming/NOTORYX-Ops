@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 
 
 class Station:
-    def __init__(self, cfg: Config, store: Store | None = None, terrain_fetch=None):
+    def __init__(self, cfg: Config, store: Store | None = None, terrain_fetch=None, addon_factories=None):
         self.cfg = cfg
         self.started_at = time.time()
         self.store = store or Store(cfg.db_path)
@@ -50,6 +50,9 @@ class Station:
         self.auth = Auth(cfg, self.store)
         self.ha = HomeAssistant(cfg, self.store, self)
         self.pg = PostgresArchive(cfg, self.store)
+        from . import addons
+
+        self.addons = addons.load(self, addon_factories)
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
@@ -72,6 +75,11 @@ class Station:
         self.fleet.start()
         self.ha.start()
         self.pg.start()
+        for a in self.addons:
+            try:
+                a.start()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("add-on %s didn't start: %s", a.id, exc)
 
     def _radio_key(self) -> tuple:
         c = self.cfg
@@ -124,6 +132,11 @@ class Station:
             m.stop()
         self.ha.stop()
         self.pg.stop()
+        for a in self.addons:
+            try:
+                a.stop()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("add-on %s didn't stop cleanly: %s", a.id, exc)
 
     def channel(self, name: str):
         """A configured channel by its name (as shown on the Channels page)."""
@@ -150,4 +163,5 @@ class Station:
             "homeassistant": self.ha.info(),
             "postgres": self.pg.info(),
             "public_map": self.cfg.public_map,
+            "addons": [{"id": a.id, "name": a.name, "version": a.version, "license": a.license} for a in self.addons],
         }

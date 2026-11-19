@@ -49,6 +49,7 @@ function Dashboard() {
   const live = useConnected();
   const { data: open } = useApi<any[]>("/api/alerts?open=true", 30000);
   const { data: info } = useApi<any>("/api/station", 15000);
+  const { data: addons } = useApi<any[]>("/api/addons");
   const loc = useLocation();
   const full = loc.pathname === "/" || loc.pathname === "/coverage";
   return (
@@ -63,6 +64,11 @@ function Dashboard() {
             {label}
             {to === "/alerts" && open && open.length > 0 && <span className="count pill warn">{open.length}</span>}
           </NavLink>
+        ))}
+        {(addons || []).filter((a) => a.page).map((a) => (
+          <a key={a.id} href={a.page} title={`Add-on, ${a.license}`}>
+            {a.name}
+          </a>
         ))}
         <div className="foot">
           <LookButton />

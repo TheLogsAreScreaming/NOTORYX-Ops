@@ -37,6 +37,8 @@ Demo mode fills the dashboard with made-up traffic and a pretend fleet. Nothing 
 | `src/notoryx_ops/terrain.py` | Elevation tiles, radio path model, coverage, high points, relay planning |
 | `src/notoryx_ops/planning.py` | Terrain API and calibration from measured links |
 | `src/notoryx_ops/field.py` | Field reports, teams, position tracks, surveys |
+| `src/notoryx_ops/addons.py` | Loader for optional add-on packages |
+| `addons/meshtastic/` | Meshtastic add-on (GPL-3.0, its own package) |
 | `src/notoryx_ops/auth.py` | Accounts, roles and sign-in sessions |
 | `src/notoryx_ops/integrations.py` | Exports, metrics, public map, Home Assistant, PostgreSQL |
 | `src/notoryx_ops/server.py` | Web API and live updates |
@@ -63,6 +65,8 @@ All code here is written from scratch. Ideas may come from other mesh tools, but
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+**Add-ons** are separate packages with their own licence. The optional [Meshtastic add-on](addons/meshtastic/) (remote admin, templates and compliance checks, and a Meshtastic⇄MeshCore bridge) is GPL-3.0 because it uses the Meshtastic Python library; NOTORYX Ops works without it, and its own code stays MIT.
 
 Elevation data: Copernicus DEM, © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA. Tiles are downloaded on first use of an area; nothing is bundled.
 

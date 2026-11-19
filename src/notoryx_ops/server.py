@@ -679,6 +679,19 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         finally:
             st.hub.unsubscribe(q)
 
+    # ---- add-ons ------------------------------------------------------------------
+    @app.get("/api/addons")
+    def addon_list():
+        from .addons import describe
+
+        return [describe(a) for a in st.addons]
+
+    for addon in st.addons:
+        if getattr(addon, "router", None) is not None:
+            app.include_router(addon.router, prefix=f"/api/addons/{addon.id}")
+        if getattr(addon, "page_dir", None):
+            app.mount(f"/addons/{addon.id}", StaticFiles(directory=addon.page_dir, html=True), name=f"addon-{addon.id}")
+
     # ---- dashboard ------------------------------------------------------------
     wd = web_dir()
     if wd:

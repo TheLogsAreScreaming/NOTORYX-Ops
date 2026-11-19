@@ -325,6 +325,21 @@ def to_toml(cfg: Config) -> str:
         f"enabled = {'true' if cfg.pg_enabled else 'false'}",
         f"dsn = {_q(cfg.pg_dsn)}",
     ]
+    if cfg.addons or cfg.addons_disabled:
+        lines += ["", "[addons]", f"disabled = {_q(list(cfg.addons_disabled))}"]
+    for name, table in sorted(cfg.addons.items()):
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            continue
+        lines += ["", f"[addons.{name}]"]
+        for k, v in table.items():
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", str(k)):
+                continue
+            if isinstance(v, bool):
+                lines.append(f"{k} = {'true' if v else 'false'}")
+            elif isinstance(v, int | float | str):
+                lines.append(f"{k} = {_q(v)}")
+            elif isinstance(v, list) and all(isinstance(x, str | int | float) and not isinstance(x, bool) for x in v):
+                lines.append(f"{k} = {_q(v)}")
     for m in cfg.mqtt:
         lines += [
             "",
