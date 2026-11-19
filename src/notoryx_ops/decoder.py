@@ -175,6 +175,11 @@ def _decode_payload(pkt: Packet, ptype: int, p: bytes) -> None:
         pkt.extra["trace_route"] = [hashes[n : n + size].hex() for n in range(0, len(hashes) - size + 1, size)]
 
 
+def valid_position(lat: float | None, lon: float | None) -> bool:
+    """Whether a position is a real place: both set and inside -90..90 and -180..180."""
+    return lat is not None and lon is not None and -90 <= lat <= 90 and -180 <= lon <= 180
+
+
 def decode_advert(p: bytes) -> Advert | None:
     if len(p) < 32 + 4 + 64 + 1:
         return None
@@ -196,7 +201,8 @@ def decode_advert(p: bytes) -> Advert | None:
     name = None
     if flags & ADVERT_HAS_NAME and len(app) > j:
         name = app[j:].split(b"\x00", 1)[0].decode("utf-8", "replace").strip() or None
-    if lat == 0 and lon == 0:
+    if (lat == 0 and lon == 0) or not valid_position(lat, lon):
+        # 0,0 means "not set"; anything off the globe is a damaged or bogus advert.
         lat = lon = None
     return Advert(
         public_key=key.hex(),

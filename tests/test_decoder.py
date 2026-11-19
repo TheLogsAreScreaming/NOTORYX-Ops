@@ -120,3 +120,20 @@ def test_parse_channel_forms():
         parse_channel("Team=00")
     with pytest.raises(ValueError):
         parse_channel("nonsense")
+
+
+def test_advert_with_position_off_the_globe_is_dropped():
+    # A damaged advert seen on a real station decoded to 2019.17, -1981.93 and blanked the map.
+    app = decoder.encode_advert_app_data(1, "Bogus", 2019.174185, -1981.933379)
+    p = decoder.decode(decoder.encode_packet(1, 0x04, [], KEY + bytes(4) + bytes(64) + app))
+    assert p.advert.lat is None and p.advert.lon is None
+    assert p.advert.name == "Bogus"
+    good = decoder.encode_advert_app_data(1, "Shelton", 41.327695, -73.093825)
+    q = decoder.decode(decoder.encode_packet(1, 0x04, [], KEY + bytes(4) + bytes(64) + good))
+    assert (q.advert.lat, q.advert.lon) == (41.327695, -73.093825)
+
+
+def test_valid_position_edges():
+    assert decoder.valid_position(90, 180) and decoder.valid_position(-90, -180)
+    assert not decoder.valid_position(90.1, 0) and not decoder.valid_position(0, -180.5)
+    assert not decoder.valid_position(None, 1) and not decoder.valid_position(1, None)
