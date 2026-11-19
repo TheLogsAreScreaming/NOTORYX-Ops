@@ -7,6 +7,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .nodestate import DEFAULT_STALE_HOURS, STALE_CHOICES_HOURS
+
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover
@@ -30,6 +32,9 @@ demo = false
 # Needed for changes (fleet, bulk settings, alerts) when the dashboard is reachable
 # from other computers. Pick a long random string. Empty = changes only from this computer.
 admin_token = ""
+# Mark nodes and observers stale when they haven't been heard for this many hours.
+# One of 0 (off), 1, 6, 24, 72 or 168.
+stale_after_hours = 24
 
 [radio]
 # "serial", "ble", "tcp" or "none"
@@ -99,6 +104,7 @@ class Config:
     fleet_history_days: int = 365
     demo: bool = False
     admin_token: str = ""
+    stale_after_hours: float = 24
     radio_transport: str = "none"
     serial_port: str = "/dev/ttyUSB0"
     baudrate: int = 115200
@@ -157,6 +163,7 @@ def load(path: Path | None = None) -> Config:
         fleet_history_days=int(st.get("fleet_history_days", 365)),
         demo=bool(st.get("demo", False)),
         admin_token=str(st.get("admin_token", "")),
+        stale_after_hours=float(st.get("stale_after_hours", DEFAULT_STALE_HOURS)),
         radio_transport=rd.get("transport", "none"),
         serial_port=rd.get("serial_port", Config.serial_port),
         baudrate=int(rd.get("baudrate", 115200)),
@@ -177,6 +184,8 @@ def load(path: Path | None = None) -> Config:
     )
     if cfg.poll_minutes < 5:
         cfg.poll_minutes = 5
+    if cfg.stale_after_hours not in STALE_CHOICES_HOURS:
+        cfg.stale_after_hours = DEFAULT_STALE_HOURS
     if cfg.stagger_seconds < 5:
         cfg.stagger_seconds = 5
     cfg.data_dir.mkdir(parents=True, exist_ok=True)

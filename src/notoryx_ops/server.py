@@ -7,6 +7,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import signal
 import time
 from contextlib import asynccontextmanager
@@ -22,8 +23,10 @@ from . import analytics, decoder, settings
 from .channels import decrypt_group_text
 from .config import Config
 from .fleet import BULK_SETTINGS
+from .nodestate import is_stale
 from .radio import RadioError
 from .station import Station
+from .store import PKT_NOT_IGNORED
 
 
 def web_dir() -> Path | None:
@@ -53,6 +56,11 @@ class BulkIn(BaseModel):
     key: str
     value: str = Field(max_length=32)
     confirm: bool = False
+
+
+class IgnoreIn(BaseModel):
+    public_key: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    name: str | None = Field(default=None, max_length=60)
 
 
 class DecodeIn(BaseModel):
@@ -149,15 +157,48 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         hours = max(0.25, min(hours, 24 * 7))
         rows = st.store.q(
             "SELECT hash, MIN(received_at) t, ptype, route, path, node_key, src_hash, summary, COUNT(*) heard"
-            " FROM packets WHERE received_at >= ? GROUP BY hash ORDER BY t", (time.time() - hours * 3600,))
+            f" FROM packets WHERE received_at >= ? AND {PKT_NOT_IGNORED} GROUP BY hash ORDER BY t",
+            (time.time() - hours * 3600,))
         for r in rows:
             r["path"] = json.loads(r["path"])
         return rows
 
     # ---- nodes, channels, observers ---------------------------------------------
+    def mark(rows: list[dict[str, Any]], key: str | None = "public_key") -> list[dict[str, Any]]:
+        now = time.time()
+        hidden = st.store.ignored_keys()
+        for r in rows:
+            r["stale"] = is_stale(r.get("last_seen"), now, cfg.stale_after_hours)
+            if key:
+                r["ignored"] = r.get(key) in hidden
+        return rows
+
     @app.get("/api/nodes")
-    def nodes():
-        return st.store.nodes()
+    def nodes(include_ignored: bool = False):
+        return mark(st.store.nodes(include_ignored))
+
+    # ---- ignore list ----------------------------------------------------------
+    @app.get("/api/ignored")
+    def ignored_list():
+        return mark(st.store.ignored(), key=None)
+
+    @app.post("/api/ignored", dependencies=[Depends(may_change)])
+    def ignore_node(body: IgnoreIn):
+        key = body.public_key.lower()
+        added = st.store.ignore(key, body.name)
+        cleared = st.alerts.clear_for_node(key)
+        if added:
+            st.store.audit("ignore_node", {"public_key": key})
+        return {"ok": True, "added": added, "alerts_cleared": cleared}
+
+    @app.delete("/api/ignored/{public_key}", dependencies=[Depends(may_change)])
+    def unignore_node(public_key: str):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", public_key):
+            raise HTTPException(400, "That isn't a node's full public key.")
+        if not st.store.unignore(public_key):
+            raise HTTPException(404, "That node isn't on the ignore list.")
+        st.store.audit("unignore_node", {"public_key": public_key.lower()})
+        return {"ok": True}
 
     @app.get("/api/messages")
     def messages(channel: str | None = None, limit: int = 200):
@@ -182,7 +223,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
 
     @app.get("/api/observers")
     def observers():
-        return analytics.observer_stats(st.store)
+        return mark(analytics.observer_stats(st.store))
 
     # ---- analytics ------------------------------------------------------------
     @app.get("/api/analytics/heatmap")

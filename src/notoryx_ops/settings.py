@@ -9,6 +9,7 @@ from typing import Any
 
 from .channels import parse_channel
 from .config import Config, MqttSource
+from .nodestate import STALE_CHOICES_HOURS
 
 TRANSPORTS = ("none", "serial", "ble", "tcp")
 RESTART_FIELDS = ("host", "port")
@@ -22,8 +23,9 @@ def public_view(cfg: Config) -> dict[str, Any]:
         "station": {
             "name": cfg.name, "host": cfg.host, "port": cfg.port,
             "packet_retention_days": cfg.packet_retention_days, "fleet_history_days": cfg.fleet_history_days,
-            "admin_token_set": bool(cfg.admin_token),
+            "admin_token_set": bool(cfg.admin_token), "stale_after_hours": cfg.stale_after_hours,
         },
+        "stale_choices_hours": list(STALE_CHOICES_HOURS),
         "radio": {
             "transport": cfg.radio_transport, "serial_port": cfg.serial_port, "baudrate": cfg.baudrate,
             "ble_address": cfg.ble_address, "tcp_host": cfg.tcp_host, "tcp_port": cfg.tcp_port,
@@ -97,6 +99,10 @@ def apply_changes(cfg: Config, data: dict[str, Any]) -> list[str]:
         new["port"] = _int(st.get("port", cfg.port), 1024, 65535, "Port")
         new["packet_retention_days"] = _int(st.get("packet_retention_days", cfg.packet_retention_days), 1, 365, "Days to keep packets")
         new["fleet_history_days"] = _int(st.get("fleet_history_days", cfg.fleet_history_days), 7, 3650, "Days to keep fleet history")
+        stale = _num(st.get("stale_after_hours", cfg.stale_after_hours), 0, 168, "Mark nodes stale after")
+        if stale not in STALE_CHOICES_HOURS:
+            raise ValueError("Mark nodes stale after: pick Off, 1 h, 6 h, 24 h, 3 days or 7 days.")
+        new["stale_after_hours"] = stale
         if "admin_token" in st and st["admin_token"] is not None:
             tok = _text(st["admin_token"], "Admin token", 200)
             if tok and len(tok) < 12:
@@ -183,6 +189,7 @@ def to_toml(cfg: Config) -> str:
         f"fleet_history_days = {cfg.fleet_history_days}",
         f"demo = {'true' if cfg.demo else 'false'}",
         f"admin_token = {_q(cfg.admin_token)}",
+        f"stale_after_hours = {float(cfg.stale_after_hours)}",
         "",
         "[radio]",
         f"transport = {_q(cfg.radio_transport)}",

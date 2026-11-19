@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { api, getToken, setToken } from "../api";
+import { ago, api, getToken, setToken, unignoreNode, useApi } from "../api";
 import { LookGallery } from "../components/ThemePicker";
 
 type S = any;
@@ -27,6 +27,33 @@ function Secret({ isSet, value, onChange, placeholder }: { isSet: boolean; value
     <div className="row">
       <input type="password" style={{ flex: 1 }} value={value} placeholder={isSet ? "Leave empty to remove it" : placeholder} autoComplete="off" onChange={(e) => onChange(e.target.value)} />
       <button type="button" onClick={() => onChange(null)}>Keep old</button>
+    </div>
+  );
+}
+
+const STALE_LABEL: Record<number, string> = { 0: "Off", 1: "1 h", 6: "6 h", 24: "24 h", 72: "3 days", 168: "7 days" };
+
+function IgnoredNodes({ onError }: { onError: (m: string) => void }) {
+  const { data, reload } = useApi<any[]>("/api/ignored");
+  return (
+    <div className="card">
+      <h2>Ignored nodes</h2>
+      <div className="small muted" style={{ marginBottom: 10 }}>
+        Hidden from the map, node and packet lists and analytics, and they never raise alerts. Their packets are still stored. Changes here apply right away.
+      </div>
+      {data?.length === 0 && <div className="small faint">No ignored nodes. Use Ignore on the Nodes page, a map popup or a packet to hide one.</div>}
+      <div className="stack">
+        {(data || []).map((n) => (
+          <div key={n.public_key} className="row chanrow">
+            <span style={{ flex: 1 }}>
+              {n.name || <span className="faint">unnamed</span>}
+              <span className="small faint mono"> {n.public_key.slice(0, 12)}</span>
+              <span className="small faint"> · ignored {ago(n.added_at)}{n.last_seen ? ` · last heard ${ago(n.last_seen)}` : ""}</span>
+            </span>
+            <button type="button" onClick={() => unignoreNode(n.public_key).then(reload).catch((e) => onError(e.message))}>Show again</button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -292,9 +319,18 @@ export default function Settings() {
             <Field label="Station name"><input value={s.station.name} onChange={(e) => set("station.name", e.target.value)} /></Field>
             <Field label="Days to keep packets"><input type="number" value={s.station.packet_retention_days} onChange={(e) => set("station.packet_retention_days", Number(e.target.value))} /></Field>
             <Field label="Days to keep fleet history"><input type="number" value={s.station.fleet_history_days} onChange={(e) => set("station.fleet_history_days", Number(e.target.value))} /></Field>
+            <Field label="Mark nodes stale after" hint="Nodes and observers not heard for this long are labelled stale and faded on the map.">
+              <select value={s.station.stale_after_hours} onChange={(e) => set("station.stale_after_hours", Number(e.target.value))}>
+                {(s.stale_choices_hours || [0, 1, 6, 24, 72, 168]).map((h: number) => (
+                  <option key={h} value={h}>{STALE_LABEL[h] ?? `${h} h`}</option>
+                ))}
+              </select>
+            </Field>
           </div>
           <div className="small faint" style={{ marginTop: 8 }}>Settings file: <span className="mono">{s.config_path}</span></div>
         </div>
+
+        <IgnoredNodes onError={setErr} />
 
         <div className="card">
           <h2>Access</h2>

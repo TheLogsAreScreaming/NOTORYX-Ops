@@ -14,7 +14,7 @@ from typing import Any
 
 from .config import Config
 from .ingest import Hub
-from .store import Store
+from .store import NODE_NOT_IGNORED, Store
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,8 @@ class Alerts:
         self.cfg, self.store, self.hub = cfg, store, hub
 
     def _raise(self, kind: str, subject: str, severity: str, message: str) -> None:
+        if self.store.is_ignored(subject):
+            return  # ignored nodes never raise alerts
         aid = self.store.raise_alert(kind, subject, severity, message)
         if aid:
             self.hub.publish({"type": "alert", "id": aid, "kind": kind, "subject": subject,
@@ -60,7 +62,7 @@ class Alerts:
         now = now or time.time()
         cfg = self.cfg
         for rep in self.store.repeaters():
-            if not rep["enabled"]:
+            if not rep["enabled"] or self.store.is_ignored(rep["public_key"]):
                 continue
             subj, name = rep["public_key"], rep["name"]
             node = self.store.one("SELECT last_advert FROM nodes WHERE public_key = ?", (subj,))
@@ -103,7 +105,8 @@ class Alerts:
     def check_prefix_clashes(self, now: float) -> None:
         rows = self.store.q(
             "SELECT prefix, COUNT(*) AS n, GROUP_CONCAT(COALESCE(name, substr(public_key,1,8)), ', ') AS names"
-            " FROM nodes WHERE node_type IN ('repeater','room') AND last_seen > ? GROUP BY prefix",
+            f" FROM nodes WHERE node_type IN ('repeater','room') AND last_seen > ? AND {NODE_NOT_IGNORED}"
+            " GROUP BY prefix",
             (now - 7 * 86400,),
         )
         for r in rows:
@@ -115,10 +118,20 @@ class Alerts:
 
     def check_observers(self, now: float) -> None:
         for o in self.store.q("SELECT * FROM observers"):
+            if self.store.is_ignored(o["public_key"]):
+                self._clear("observer_quiet", o["name"])
+                continue
             if now - o["last_seen"] > 30 * 60 and now - o["first_seen"] > 30 * 60:
                 self._raise("observer_quiet", o["name"], "warning", f"Observer {o['name']} has sent nothing for 30 min")
             else:
                 self._clear("observer_quiet", o["name"])
+
+    def clear_for_node(self, public_key: str) -> int:
+        """Resolve every open alert about a node, for when it goes on the ignore list."""
+        rows = self.store.q("SELECT kind FROM alerts WHERE subject = ? AND resolved_at IS NULL", (public_key,))
+        for r in rows:
+            self._clear(r["kind"], public_key)
+        return len(rows)
 
     async def deliver(self, alert_id: int) -> None:
         a = self.store.one("SELECT * FROM alerts WHERE id = ?", (alert_id,))

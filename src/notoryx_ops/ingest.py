@@ -133,5 +133,8 @@ class Ingest:
         if pkt.advert:
             event["advert"] = {"name": pkt.advert.name, "node_type": pkt.advert.node_type,
                                "lat": pkt.advert.lat, "lon": pkt.advert.lon}
-        self.hub.publish(event)
+        if self.store.is_ignored(node_key):
+            event["ignored"] = True  # stored, but kept off the live map and packet feed
+        else:
+            self.hub.publish(event)
         return event

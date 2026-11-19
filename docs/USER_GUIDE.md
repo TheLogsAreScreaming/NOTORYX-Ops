@@ -35,7 +35,7 @@ Everything is stored in a settings file you can also edit by hand. The main part
 
 | Section | What to set |
 |---|---|
-| `[station]` | Name, web port, `host`, `admin_token`, how long to keep packets |
+| `[station]` | Name, web port, `host`, `admin_token`, how long to keep packets, `stale_after_hours` (0 = off, 1, 6, 24, 72 or 168) |
 | `[radio]` | `transport` = `serial`, `ble`, `tcp` or `none`, plus the port, Bluetooth address or TCP host |
 | `[channels]` | Channel keys to decrypt: `"public"`, `"#hashtag"` or `"Name=32 hex digits"` |
 | `[fleet]` | Poll interval (minimum 5 minutes), spacing between repeaters, quiet hours, low battery volts, expected firmware |
@@ -44,13 +44,20 @@ Everything is stored in a settings file you can also edit by hand. The main part
 
 Restart the station after editing the file by hand.
 
+### Stale and ignored nodes
+
+**Mark nodes stale after** (Off, 1 h, 6 h, 24 h, 3 days or 7 days; default 24 h) labels any node or observer not heard for that long as **stale · age** with a clock icon, and fades it on the Live map. A node never heard yet is never stale. The fleet's own **Quiet after** alert is separate and unchanged.
+
+**Ignore** a node from the Nodes page, its Live map popup, a packet's detail or the Analytics advert table. Ignored nodes are hidden from the map, node and packet lists and analytics, and never raise alerts; any open alerts about one are cleared. Their packets are still stored. The **Ignored nodes** card in Settings lists them with **Show again**. Ignoring needs the admin token like any other change. Only packets that carry a node's full key (adverts) can be tied to it; other packets name their sender by one byte, which several nodes can share, so those stay visible.
+
 ## Pages
 
-- **Live map:** every node with a known position, links between them (colour = signal), and routes drawn as packets arrive. Your repeaters have a ring, red when quiet. **Replay last 24 h** plays back the day at up to 300× speed.
+- **Live map:** every node with a known position, links between them (colour = signal), and routes drawn as packets arrive. Your repeaters have a ring, red when quiet. Stale nodes are faded and labelled. **Show range rings** draws four distance rings, with spokes every 45° and N/E/S/W tags, around the station radio's position, sized to the current view; the choice is saved in this browser. **Replay last 24 h** plays back the day at up to 300× speed.
 - **Packets:** live feed with filters. Click a packet for its decoded fields, every observer that heard it, and the raw bytes. **Decode a packet** decodes pasted hex.
+- **Nodes:** every node the station has heard, with type, prefix, last heard and a stale label, plus **Ignore**.
 - **Channels:** messages on channels you have keys for, and hashes of other channels heard.
 - **My fleet:** repeaters you own. Add one by picking it from repeaters the station has heard, with its admin password. Click a row for battery, noise and airtime history and its neighbours. **Bulk settings** reads each repeater's current value, shows what would change, and sends only after you confirm.
-- **Observers:** each radio feeding the station, how much it hears and its average signal.
+- **Observers:** each radio feeding the station, how much it hears and its average signal, with a stale label when it has gone silent for longer than the stale setting.
 - **Coverage:** hexes where a node was heard directly, coloured by best SNR, and nodes far from every known repeater.
 - **Analytics:** totals, a weekday-by-hour activity map, packet types, busiest relays and senders, and the 256 one-byte prefixes with clashes and free ones.
 - **Alerts:** open and cleared alerts. Alerts clear on their own once the problem is gone.

@@ -107,4 +107,5 @@ class Station:
             "retention_days": self.cfg.packet_retention_days,
             "config_path": str(self.cfg.path),
             "changes_need_token": bool(self.cfg.admin_token),
+            "stale_after_hours": self.cfg.stale_after_hours,
         }
