@@ -163,7 +163,8 @@ class FakeMqtt:
 
 
 def test_home_assistant_discovery(tmp_path):
-    cfg, c = make(tmp_path, ha_enabled=True, ha_host="broker.local")
+    # Turned off so the background task never tries a real broker during the test.
+    cfg, c = make(tmp_path, ha_enabled=False, ha_host="broker.local")
     with c:
         st = c.app.state.station
         st.ha.client = FakeMqtt()
@@ -180,6 +181,9 @@ def test_home_assistant_discovery(tmp_path):
         st.ha.publish_once()
         configs = [t for t, _, _ in st.ha.client.sent[before:] if t.endswith("/config")]
         assert not configs  # discovery is sent once per connection
+        st.ha.client = None
+        with pytest.raises(RuntimeError):
+            st.ha.publish_once()
 
 
 # ---- PostgreSQL ------------------------------------------------------------------------

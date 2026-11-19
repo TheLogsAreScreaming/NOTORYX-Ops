@@ -368,12 +368,13 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     async def ha_test():
         if not (cfg.ha_enabled and cfg.ha_host):
             raise HTTPException(400, "Turn on Home Assistant and enter its MQTT broker first.")
-        if st.ha.client is None:
+        client = st.ha.client
+        if client is None:
             try:
-                st.ha.client = await asyncio.to_thread(st.ha._connect)
+                client = st.ha.client = await asyncio.to_thread(st.ha._connect)
             except Exception as exc:  # noqa: BLE001
                 raise HTTPException(503, f"Couldn't reach the broker: {exc}") from exc
-        return {"sent": st.ha.publish_once()}
+        return {"sent": st.ha.publish_once(client)}
 
     @app.post("/api/integrations/postgres/run", dependencies=[Depends(admin)])
     async def pg_run():

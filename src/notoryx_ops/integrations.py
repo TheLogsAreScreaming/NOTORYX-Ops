@@ -225,7 +225,7 @@ class HomeAssistant:
         return {"identifiers": [self.node_id], "name": self.cfg.name, "manufacturer": "NOTORYX",
                 "model": "NOTORYX Ops station", "sw_version": __version__}
 
-    def _sensor(self, uid: str, name: str, value: Any, unit: str | None = None, dev_class: str | None = None,
+    def _sensor(self, c, uid: str, name: str, value: Any, unit: str | None = None, dev_class: str | None = None,
                 device: dict[str, Any] | None = None, binary: bool = False, state_class: str | None = "measurement") -> None:
         comp = "binary_sensor" if binary else "sensor"
         state_topic = f"{self.node_id}/{uid}/state"
@@ -240,22 +240,27 @@ class HomeAssistant:
                 cfg.update({"payload_on": "ON", "payload_off": "OFF"})
             elif state_class:
                 cfg["state_class"] = state_class
-            self.client.publish(f"{self.cfg.ha_prefix}/{comp}/{self.node_id}/{uid}/config", json.dumps(cfg), retain=True)
+            c.publish(f"{self.cfg.ha_prefix}/{comp}/{self.node_id}/{uid}/config", json.dumps(cfg), retain=True)
             self._announced.add(uid)
         if binary:
             payload = "ON" if value else "OFF"
         else:
             payload = "unknown" if value is None else str(value)
-        self.client.publish(state_topic, payload, retain=True)
+        c.publish(state_topic, payload, retain=True)
 
-    def publish_once(self) -> int:
-        """Send every sensor once. Returns how many were sent."""
-        c = self.client
+    def publish_once(self, client=None) -> int:
+        """Send every sensor once. Returns how many were sent.
+
+        Uses one client reference throughout: the background loop may drop self.client meanwhile.
+        """
+        c = client or self.client
+        if c is None:
+            raise RuntimeError("not connected to the broker")
         c.publish(f"{self.node_id}/status", "online", retain=True)
         ov = analytics.overview(self.store)
         sent = 0
         for uid, name, val in (("radio", "Radio connected", self.station.radio.connected),):
-            self._sensor(uid, name, val, dev_class="connectivity", binary=True)
+            self._sensor(c, uid, name, val, dev_class="connectivity", binary=True)
             sent += 1
         for uid, name, val, unit in (
             ("unique_1h", "Packets last hour", ov["unique_1h"], "packets"),
@@ -264,7 +269,7 @@ class HomeAssistant:
             ("repeaters_24h", "Repeaters heard 24 h", ov["repeaters_24h"], "repeaters"),
             ("alerts_open", "Open alerts", self.store.one("SELECT COUNT(*) n FROM alerts WHERE resolved_at IS NULL")["n"], None),
         ):
-            self._sensor(uid, name, val, unit)
+            self._sensor(c, uid, name, val, unit)
             sent += 1
         now = time.time()
         for r in self.station.fleet.overview():
@@ -274,11 +279,11 @@ class HomeAssistant:
                    "model": "Repeater", "via_device": self.node_id}
             heard = r.get("last_heard")
             quiet = not heard or now - heard > self.cfg.quiet_hours * 3600
-            self._sensor(f"rep_{key}_online", f"{r['name']} online", not quiet, dev_class="connectivity", device=dev, binary=True)
+            self._sensor(c, f"rep_{key}_online", f"{r['name']} online", not quiet, dev_class="connectivity", device=dev, binary=True)
             mv = ok.get("battery_mv")
-            self._sensor(f"rep_{key}_battery", f"{r['name']} battery", round(mv / 1000, 3) if mv else None, "V", "voltage", dev)
-            self._sensor(f"rep_{key}_noise", f"{r['name']} noise floor", ok.get("noise_floor"), "dBm", "signal_strength", dev)
-            self._sensor(f"rep_{key}_snr", f"{r['name']} last SNR", ok.get("last_snr"), "dB", None, dev)
+            self._sensor(c, f"rep_{key}_battery", f"{r['name']} battery", round(mv / 1000, 3) if mv else None, "V", "voltage", dev)
+            self._sensor(c, f"rep_{key}_noise", f"{r['name']} noise floor", ok.get("noise_floor"), "dBm", "signal_strength", dev)
+            self._sensor(c, f"rep_{key}_snr", f"{r['name']} last SNR", ok.get("last_snr"), "dB", None, dev)
             sent += 4
         self.last_publish = time.time()
         return sent
