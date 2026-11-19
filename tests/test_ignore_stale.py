@@ -13,7 +13,7 @@ from notoryx_ops.channels import parse_channel
 from notoryx_ops.config import Config
 from notoryx_ops.fleet import Fleet
 from notoryx_ops.ingest import Hub, Ingest
-from notoryx_ops.nodestate import STALE_CHOICES_HOURS, is_stale
+from notoryx_ops.nodestate import STALE_CHOICES_HOURS, is_stale, known_time
 from notoryx_ops.server import create_app
 from notoryx_ops.store import SCHEMA_VERSION, Store
 
@@ -38,8 +38,11 @@ def env(tmp_path):
 
 # ---- stale rule ---------------------------------------------------------------
 
+NOW = 1_763_000_000.0  # November 2025
+
+
 def test_stale_rule():
-    now = 1_000_000.0
+    now = NOW
     assert is_stale(now - 25 * 3600, now, 24)
     assert not is_stale(now - 23 * 3600, now, 24)
     assert not is_stale(now - 24 * 3600, now, 24)  # exactly at the limit is still fresh
@@ -47,12 +50,39 @@ def test_stale_rule():
 
 
 def test_never_heard_is_never_stale():
-    assert not is_stale(None, 1e9, 1)
-    assert not is_stale(0, 1e9, 1)
+    assert not is_stale(None, NOW, 1)
+    assert not is_stale(0, NOW, 1)
 
 
 def test_off_means_never_stale():
-    assert not is_stale(1.0, 1e9, 0)
+    assert not is_stale(NOW - 30 * 86400, NOW, 0)
+
+
+def test_epoch_time_is_unknown_not_stale():
+    assert known_time(0, NOW) is None
+    assert known_time(0.0, NOW) is None
+    assert not is_stale(0, NOW, 1)
+    assert not is_stale(1.0, NOW, 1)  # one second after the epoch
+
+
+def test_pre_2020_time_is_unknown_not_stale():
+    t = 1_546_300_800.0  # 2019-01-01
+    assert known_time(t, NOW) is None
+    assert not is_stale(t, NOW, 1)
+
+
+def test_future_time_is_unknown_not_stale():
+    t = NOW + 2 * 86400
+    assert known_time(t, NOW) is None
+    assert not is_stale(t, NOW, 1)
+    assert known_time(NOW + 3600, NOW) == NOW + 3600  # a slightly fast clock is still believed
+
+
+def test_normal_time_is_known():
+    t = NOW - 3 * 86400
+    assert known_time(t, NOW) == t
+    assert is_stale(t, NOW, 24)
+    assert not is_stale(t, NOW, 168)
 
 
 def test_stale_setting_round_trip_and_validation(tmp_path):
@@ -240,3 +270,10 @@ def test_stale_flag_follows_setting(tmp_path):
         assert not any(n["stale"] for n in c.get("/api/nodes").json())
         assert c.put("/api/settings", json={"station": {"stale_after_hours": 2}}).status_code == 400
         assert all("stale" in o for o in c.get("/api/observers").json())
+
+
+def test_epoch_last_seen_is_not_flagged_stale(tmp_path):
+    with make(tmp_path) as c:
+        st = c.app.state.station
+        st.store.x("UPDATE nodes SET last_seen = 0")
+        assert not any(n["stale"] for n in c.get("/api/nodes").json())

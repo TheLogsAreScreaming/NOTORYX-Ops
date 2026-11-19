@@ -46,13 +46,13 @@ Restart the station after editing the file by hand.
 
 ### Stale and ignored nodes
 
-**Mark nodes stale after** (Off, 1 h, 6 h, 24 h, 3 days or 7 days; default 24 h) labels any node or observer not heard for that long as **stale · age** with a clock icon, and fades it on the Live map. A node never heard yet is never stale. The fleet's own **Quiet after** alert is separate and unchanged.
+**Mark nodes stale after** (Off, 1 h, 6 h, 24 h, 3 days or 7 days; default 24 h) labels any node or observer not heard for that long as **stale · age** with a clock icon, and fades it on the Live map. A node never heard yet is never stale, and neither is one whose time can't be trusted (0, before 2020, or more than a day ahead, as from a radio whose clock was never set): it shows "unknown" instead of an age. The fleet's own **Quiet after** alert is separate and unchanged.
 
 **Ignore** a node from the Nodes page, its Live map popup, a packet's detail or the Analytics advert table. Ignored nodes are hidden from the map, node and packet lists and analytics, and never raise alerts; any open alerts about one are cleared. Their packets are still stored. The **Ignored nodes** card in Settings lists them with **Show again**. Ignoring needs the admin token like any other change. Only packets that carry a node's full key (adverts) can be tied to it; other packets name their sender by one byte, which several nodes can share, so those stay visible.
 
 ## Pages
 
-- **Live map:** every node with a known position, links between them (colour = signal), and routes drawn as packets arrive. Your repeaters have a ring, red when quiet. Stale nodes are faded and labelled. **Show range rings** draws four distance rings, with spokes every 45° and N/E/S/W tags, around the station radio's position, sized to the current view; the choice is saved in this browser. **Replay last 24 h** plays back the day at up to 300× speed.
+- **Live map:** every node with a known position, links between them (colour = signal), and routes drawn as packets arrive. Your repeaters have a ring, red when quiet. Stale nodes are faded and labelled. **Show range rings** draws four distance rings, with spokes every 45° and N/E/S/W tags, around the station radio's position, sized to the part of the map the panels and controls leave clear, with every label kept in that part; the choice is saved in this browser. **Replay last 24 h** plays back the day at up to 300× speed.
 - **Packets:** live feed with filters. Click a packet for its decoded fields, every observer that heard it, and the raw bytes. **Decode a packet** decodes pasted hex.
 - **Nodes:** every node the station has heard, with type, prefix, last heard and a stale label, plus **Ignore**.
 - **Channels:** messages on channels you have keys for, and hashes of other channels heard.
