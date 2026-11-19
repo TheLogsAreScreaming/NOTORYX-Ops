@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .decoder import valid_position
+
 SCHEMA_VERSION = 2
 
 # SQL conditions that leave out nodes on the ignore list. A packet without a node key
@@ -181,6 +183,12 @@ class Store:
                 "INSERT INTO meta(key, value) VALUES ('schema_version', ?)"
                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(SCHEMA_VERSION),)
             )
+        # Positions off the globe came from damaged adverts stored before they were rejected.
+        # They broke the map, so clear them on every start (cheap, and idempotent).
+        self.db.execute(
+            "UPDATE nodes SET lat = NULL, lon = NULL"
+            " WHERE lat IS NOT NULL AND (lat NOT BETWEEN -90 AND 90 OR lon IS NULL OR lon NOT BETWEEN -180 AND 180)"
+        )
 
     def schema_version(self) -> int:
         r = self.one("SELECT value FROM meta WHERE key = 'schema_version'")
@@ -257,6 +265,8 @@ class Store:
 
     # ---- nodes ---------------------------------------------------------
     def upsert_node(self, key: str, name, node_type, lat, lon, advert_ts, now, snr, direct_observer=None):
+        if not valid_position(lat, lon):
+            lat = lon = None
         cur = self.one("SELECT * FROM nodes WHERE public_key = ?", (key,))
         if cur is None:
             obs = [direct_observer] if direct_observer else []

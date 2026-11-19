@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MlMap, GeoJSONSource } from "maplibre-gl";
-import MapView, { fitTo } from "../components/MapView";
+import MapView, { fitTo, onGlobe } from "../components/MapView";
 import { currentTheme, nodeColor, onTheme, routeColor, snrColor } from "../themes";
 import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, duration, ignoreNode, knownTime, makeResolver, useApi, useLive } from "../api";
 import { CARDINAL_AT, Rect, UNITS, distanceM, freeRect, inRect, inset, pullInside, ringFeatures, ringStep } from "../rings";
@@ -96,11 +96,11 @@ export default function LiveMap() {
     const pts: [number, number][] = [];
     const origin = p.node_key ? byKey.get(p.node_key) : resolve(p.src_hash);
     if (origin?.ignored && p.node_key) return;
-    if (origin?.lat != null && origin.lon != null && !origin.ignored) pts.push([origin.lon, origin.lat]);
+    if (origin?.lat != null && origin.lon != null && !origin.ignored && onGlobe([origin.lon, origin.lat])) pts.push([origin.lon, origin.lat]);
     if (p.ptype !== "trace") {
       for (const h of p.path) {
         const n = resolve(h);
-        if (n?.lat != null && n.lon != null && !n.ignored) {
+        if (n?.lat != null && n.lon != null && !n.ignored && onGlobe([n.lon, n.lat])) {
           const last = pts[pts.length - 1];
           if (!last || last[0] !== n.lon || last[1] !== n.lat) pts.push([n.lon, n.lat]);
         }
@@ -122,7 +122,7 @@ export default function LiveMap() {
 
   // Static layers: links and nodes.
   function drawStatic(m: MlMap) {
-    const located = (nodes || []).filter((n) => n.lat != null && n.lon != null && !n.ignored);
+    const located = (nodes || []).filter((n) => n.lat != null && n.lon != null && !n.ignored && onGlobe([n.lon, n.lat]));
     const nodeFc: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
       features: located.map((n) => {
@@ -149,7 +149,7 @@ export default function LiveMap() {
         .map((l) => {
           const a = byKey.get(l.a);
           const b = byKey.get(l.b);
-          if (a?.lat == null || b?.lat == null || a.ignored || b.ignored) return null;
+          if (a?.lat == null || b?.lat == null || a.ignored || b.ignored || !onGlobe([a.lon!, a.lat]) || !onGlobe([b.lon!, b.lat])) return null;
           return {
             type: "Feature",
             geometry: { type: "LineString", coordinates: [[a.lon!, a.lat!], [b.lon!, b.lat!]] },

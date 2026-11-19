@@ -131,7 +131,14 @@ export default function MapView({
   );
 }
 
-export function fitTo(m: MlMap, pts: [number, number][], padding: number | maplibregl.PaddingOptions = 60) {
+/** Whether [lon, lat] is a real place. MapLibre throws on anything else and takes the page down. */
+export function onGlobe(p: [number, number]): boolean {
+  const [lon, lat] = p;
+  return Number.isFinite(lon) && Number.isFinite(lat) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+}
+
+export function fitTo(m: MlMap, all: [number, number][], padding: number | maplibregl.PaddingOptions = 60) {
+  const pts = all.filter(onGlobe);
   if (!pts.length) return;
   const b = new maplibregl.LngLatBounds(pts[0], pts[0]);
   pts.forEach((p) => b.extend(p));

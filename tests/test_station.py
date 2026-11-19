@@ -193,3 +193,19 @@ def test_old_database_gets_new_columns(tmp_path):
     db.close()
     st = Store(path)
     assert st.one("SELECT last_advert FROM nodes")["last_advert"] == 5
+
+
+def test_store_rejects_and_clears_positions_off_the_globe(tmp_path):
+    path = tmp_path / "ops.sqlite"
+    s = Store(path)
+    now = time.time()
+    s.upsert_node("aa" * 32, "Bad", "unknown", 2019.17, -1981.93, now, now, None)
+    assert s.nodes()[0]["lat"] is None
+    # A row stored by an older version is cleaned on the next start.
+    s.db.execute("UPDATE nodes SET lat = 2019.17, lon = -1981.93")
+    s.upsert_node("bb" * 32, "Good", "repeater", 41.33, -73.09, now, now, None)
+    s.db.close()
+    s2 = Store(path)
+    by = {n["name"]: n for n in s2.nodes()}
+    assert by["Bad"]["lat"] is None and by["Bad"]["lon"] is None
+    assert (by["Good"]["lat"], by["Good"]["lon"]) == (41.33, -73.09)
