@@ -411,7 +411,7 @@ export default function LiveMap() {
         {feed.length === 0 && <div className="empty small">Waiting for packets…</div>}
         {feed.map((p, i) => (
           <div className="pk" key={`${p.hash}-${i}`}>
-            <span className="mono faint">{clock(p.received_at).slice(0, 5)}</span>
+            <span className="mono faint" title={new Date(p.received_at * 1000).toLocaleString()}>{clock(p.received_at, false)}</span>
             <span><span className={`pill ${TYPE_PILL[p.ptype] || "plain"}`}>{TYPE_LABEL[p.ptype] || p.ptype}</span></span>
             <span className="ell" title={p.summary}>{p.summary}</span>
             <span className="mono faint" title="SNR or times heard">{p.snr != null ? p.snr.toFixed(1) : p.observer}</span>
