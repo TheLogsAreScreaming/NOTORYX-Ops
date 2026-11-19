@@ -88,6 +88,33 @@ client_height_m = 1.5
 # Correct predictions with the median error on links the station has measured.
 use_calibration = true
 
+[integrations]
+# Bearer token that lets Prometheus read /metrics once accounts are on. Empty = sign-in needed.
+metrics_token = ""
+# A read-only public map at /public: repeaters (and optionally companions), positions rounded.
+public_map = false
+public_title = ""
+# Decimal places kept in public positions: 2 is about 1 km, 3 about 100 m.
+public_precision = 2
+public_show_companions = false
+
+[homeassistant]
+# Publishes station and fleet sensors to Home Assistant over MQTT (discovery).
+enabled = false
+host = ""
+port = 1883
+username = ""
+password = ""
+tls = false
+prefix = "homeassistant"
+interval_s = 60
+
+[postgres]
+# Copies packets, messages, fleet history and alerts to PostgreSQL every minute.
+# Needs: pip install "notoryx-ops[postgres]"
+enabled = false
+dsn = ""
+
 # Add one block per MQTT broker that carries observer packets.
 # [[mqtt]]
 # name = "Local broker"
@@ -151,6 +178,21 @@ class Config:
     repeater_height_m: float = 10
     client_height_m: float = 1.5
     use_calibration: bool = True
+    metrics_token: str = ""
+    public_map: bool = False
+    public_title: str = ""
+    public_precision: int = 2
+    public_show_companions: bool = False
+    ha_enabled: bool = False
+    ha_host: str = ""
+    ha_port: int = 1883
+    ha_username: str = ""
+    ha_password: str = ""
+    ha_tls: bool = False
+    ha_prefix: str = "homeassistant"
+    ha_interval_s: int = 60
+    pg_enabled: bool = False
+    pg_dsn: str = ""
 
     @property
     def db_path(self) -> Path:
@@ -180,6 +222,7 @@ def load(path: Path | None = None) -> Config:
     st, rd = raw.get("station", {}), raw.get("radio", {})
     fl, al = raw.get("fleet", {}), raw.get("alerts", {})
     tr = raw.get("terrain", {})
+    ig, ha, pg = raw.get("integrations", {}), raw.get("homeassistant", {}), raw.get("postgres", {})
     data_dir = Path(st.get("data_dir", "data")).expanduser()
     if not data_dir.is_absolute():
         data_dir = path.parent / data_dir
@@ -222,7 +265,23 @@ def load(path: Path | None = None) -> Config:
         repeater_height_m=float(tr.get("repeater_height_m", Config.repeater_height_m)),
         client_height_m=float(tr.get("client_height_m", Config.client_height_m)),
         use_calibration=bool(tr.get("use_calibration", True)),
+        metrics_token=str(ig.get("metrics_token", "")),
+        public_map=bool(ig.get("public_map", False)),
+        public_title=str(ig.get("public_title", "")),
+        public_precision=int(ig.get("public_precision", 2)),
+        public_show_companions=bool(ig.get("public_show_companions", False)),
+        ha_enabled=bool(ha.get("enabled", False)),
+        ha_host=str(ha.get("host", "")),
+        ha_port=int(ha.get("port", 1883)),
+        ha_username=str(ha.get("username", "")),
+        ha_password=str(ha.get("password", "")),
+        ha_tls=bool(ha.get("tls", False)),
+        ha_prefix=str(ha.get("prefix", "homeassistant")),
+        ha_interval_s=int(ha.get("interval_s", 60)),
+        pg_enabled=bool(pg.get("enabled", False)),
+        pg_dsn=str(pg.get("dsn", "")),
     )
+    cfg.public_precision = min(4, max(1, cfg.public_precision))
     if cfg.terrain_source not in ("glo90", "glo30"):
         cfg.terrain_source = "glo90"
     if cfg.poll_minutes < 5:

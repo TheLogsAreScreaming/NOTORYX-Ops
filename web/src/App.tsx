@@ -12,6 +12,9 @@ import Analytics from "./pages/Analytics";
 import Alerts from "./pages/Alerts";
 import Station from "./pages/Station";
 import Settings from "./pages/Settings";
+import Login from "./pages/Login";
+import PublicMap from "./pages/PublicMap";
+import { signOut, useMe } from "./auth";
 
 const NAV: [string, string][] = [
   ["/", "Live map"],
@@ -28,6 +31,16 @@ const NAV: [string, string][] = [
 ];
 
 export default function App() {
+  const loc = useLocation();
+  const me = useMe();
+  if (loc.pathname === "/public") return <PublicMap />;
+  if (!me) return <div className="empty" style={{ padding: 24 }}>Loading…</div>;
+  if (me.accounts_on && !me.user) return <Login publicMap={me.public_map} />;
+  return <Dashboard />;
+}
+
+function Dashboard() {
+  const me = useMe();
   const live = useConnected();
   const { data: open } = useApi<any[]>("/api/alerts?open=true", 30000);
   const { data: info } = useApi<any>("/api/station", 15000);
@@ -55,6 +68,12 @@ export default function App() {
             {info?.demo ? " · demo data" : ""}
           </div>
           <div>v{info?.version || ""}</div>
+          {me?.user && (
+            <div className="row" style={{ marginTop: 6 }}>
+              <span className="ell" title={me.user.role}>{me.user.username}</span>
+              {me.accounts_on && <button className="small" onClick={() => signOut()}>Sign out</button>}
+            </div>
+          )}
         </div>
       </nav>
       <main className={full ? "main full" : "main"}>

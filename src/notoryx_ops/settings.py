@@ -15,7 +15,7 @@ TRANSPORTS = ("none", "serial", "ble", "tcp")
 RESTART_FIELDS = ("host", "port")
 
 # Secret fields: never sent to the browser. On save, None keeps the value, "" clears it.
-SECRETS = ("admin_token", "discord_webhook", "webhook_secret")
+SECRETS = ("admin_token", "discord_webhook", "webhook_secret", "metrics_token", "ha_password", "pg_dsn")
 
 
 # Settings page key -> Config attribute for the [terrain] block.
@@ -56,6 +56,15 @@ def public_view(cfg: Config) -> dict[str, Any]:
             for m in cfg.mqtt
         ],
         "terrain": {k: getattr(cfg, a) for k, a in TERRAIN_FIELDS.items()},
+        "integrations": {
+            "metrics_token_set": bool(cfg.metrics_token), "public_map": cfg.public_map, "public_title": cfg.public_title,
+            "public_precision": cfg.public_precision, "public_show_companions": cfg.public_show_companions,
+        },
+        "homeassistant": {
+            "enabled": cfg.ha_enabled, "host": cfg.ha_host, "port": cfg.ha_port, "username": cfg.ha_username,
+            "password_set": bool(cfg.ha_password), "tls": cfg.ha_tls, "prefix": cfg.ha_prefix, "interval_s": cfg.ha_interval_s,
+        },
+        "postgres": {"enabled": cfg.pg_enabled, "dsn_set": bool(cfg.pg_dsn)},
         "demo": cfg.demo,
         "config_path": str(cfg.path),
     }
@@ -172,6 +181,43 @@ def apply_changes(cfg: Config, data: dict[str, Any]) -> list[str]:
         new["repeater_height_m"] = _num(tr.get("repeater_height_m", cfg.repeater_height_m), 0, 300, "Repeater antenna height (m)")
         new["client_height_m"] = _num(tr.get("client_height_m", cfg.client_height_m), 0, 300, "Client antenna height (m)")
         new["use_calibration"] = bool(tr.get("use_calibration", cfg.use_calibration))
+    ig = data.get("integrations") or {}
+    if ig:
+        if ig.get("metrics_token") is not None:
+            tok = _text(ig["metrics_token"], "Metrics token", 200)
+            if tok and len(tok) < 12:
+                raise ValueError("Metrics token must be at least 12 characters.")
+            new["metrics_token"] = tok
+        new["public_map"] = bool(ig.get("public_map", cfg.public_map))
+        new["public_title"] = _text(ig.get("public_title", cfg.public_title), "Public map title", 60)
+        new["public_precision"] = _int(ig.get("public_precision", cfg.public_precision), 1, 4, "Public position detail")
+        new["public_show_companions"] = bool(ig.get("public_show_companions", cfg.public_show_companions))
+    ha = data.get("homeassistant") or {}
+    if ha:
+        new["ha_enabled"] = bool(ha.get("enabled", cfg.ha_enabled))
+        new["ha_host"] = _text(ha.get("host", cfg.ha_host), "Home Assistant broker", 200)
+        new["ha_port"] = _int(ha.get("port", cfg.ha_port), 1, 65535, "Home Assistant broker port")
+        new["ha_username"] = _text(ha.get("username", cfg.ha_username), "Home Assistant broker username", 100)
+        if ha.get("password") is not None:
+            new["ha_password"] = _text(ha["password"], "Home Assistant broker password", 200)
+        new["ha_tls"] = bool(ha.get("tls", cfg.ha_tls))
+        prefix = _text(ha.get("prefix", cfg.ha_prefix), "Discovery prefix", 60, allow_empty=False)
+        if not re.fullmatch(r"[A-Za-z0-9_/-]+", prefix):
+            raise ValueError("Discovery prefix can use letters, numbers, _, - and /.")
+        new["ha_prefix"] = prefix
+        new["ha_interval_s"] = _int(ha.get("interval_s", cfg.ha_interval_s), 15, 3600, "Seconds between updates")
+        if new["ha_enabled"] and not new["ha_host"]:
+            raise ValueError("Enter the MQTT broker that Home Assistant uses.")
+    pg = data.get("postgres") or {}
+    if pg:
+        new["pg_enabled"] = bool(pg.get("enabled", cfg.pg_enabled))
+        if pg.get("dsn") is not None:
+            dsn = _text(pg["dsn"], "PostgreSQL connection", 500)
+            if dsn and not re.match(r"^(postgres(ql)?://|host=|dbname=)", dsn):
+                raise ValueError("PostgreSQL connection must look like postgresql://user:pass@host/db.")
+            new["pg_dsn"] = dsn
+        if new["pg_enabled"] and not new.get("pg_dsn", cfg.pg_dsn):
+            raise ValueError("Enter the PostgreSQL connection first.")
     if "mqtt" in data:
         old = {m.name: m for m in cfg.mqtt}
         brokers = []
@@ -257,6 +303,27 @@ def to_toml(cfg: Config) -> str:
         f"repeater_height_m = {float(cfg.repeater_height_m)}",
         f"client_height_m = {float(cfg.client_height_m)}",
         f"use_calibration = {'true' if cfg.use_calibration else 'false'}",
+        "",
+        "[integrations]",
+        f"metrics_token = {_q(cfg.metrics_token)}",
+        f"public_map = {'true' if cfg.public_map else 'false'}",
+        f"public_title = {_q(cfg.public_title)}",
+        f"public_precision = {int(cfg.public_precision)}",
+        f"public_show_companions = {'true' if cfg.public_show_companions else 'false'}",
+        "",
+        "[homeassistant]",
+        f"enabled = {'true' if cfg.ha_enabled else 'false'}",
+        f"host = {_q(cfg.ha_host)}",
+        f"port = {int(cfg.ha_port)}",
+        f"username = {_q(cfg.ha_username)}",
+        f"password = {_q(cfg.ha_password)}",
+        f"tls = {'true' if cfg.ha_tls else 'false'}",
+        f"prefix = {_q(cfg.ha_prefix)}",
+        f"interval_s = {int(cfg.ha_interval_s)}",
+        "",
+        "[postgres]",
+        f"enabled = {'true' if cfg.pg_enabled else 'false'}",
+        f"dsn = {_q(cfg.pg_dsn)}",
     ]
     for m in cfg.mqtt:
         lines += [
