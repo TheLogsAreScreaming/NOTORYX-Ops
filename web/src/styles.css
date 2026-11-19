@@ -160,7 +160,7 @@ tr.sel td { background: var(--accent-bg); }
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.18);
 }
 .feed { width: 340px; max-height: calc(100% - 24px); overflow-y: auto; right: 12px; top: 12px; }
-.feed .pk { display: grid; grid-template-columns: 54px 66px minmax(0, 1fr) 38px; gap: 6px; font-size: 12px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.feed .pk { display: grid; grid-template-columns: 84px 66px minmax(0, 1fr) 38px; gap: 6px; font-size: 12px; padding: 3px 0; border-bottom: 1px solid var(--line); }
 .feed .pk:last-child { border: 0; }
 .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .replay { left: 12px; right: 364px; bottom: 12px; display: flex; align-items: center; gap: 10px; }

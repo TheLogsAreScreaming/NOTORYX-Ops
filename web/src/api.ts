@@ -191,8 +191,22 @@ export function ago(t: number | null | undefined, now = Date.now() / 1000): stri
   return `${Math.round(s / 86400)} d ago`;
 }
 
-export function clock(t: number): string {
-  return new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+/**
+ * A packet's time in the viewer's locale, keeping AM/PM where the locale uses it.
+ * Today shows the time only; the last 6 days add the weekday; older adds the date,
+ * so yesterday afternoon never reads like tonight.
+ */
+export function clock(t: number, seconds = true, now = Date.now()): string {
+  const d = new Date(t * 1000);
+  const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", ...(seconds ? { second: "2-digit" } : {}) });
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  const daysAgo = Math.round((today.getTime() - day.getTime()) / 86400000);
+  if (daysAgo === 0) return time;
+  if (daysAgo > 0 && daysAgo < 7) return `${d.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
 export function duration(s: number | null | undefined): string {
