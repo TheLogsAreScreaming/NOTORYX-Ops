@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, settings
+from . import analytics, decoder, planning, settings
 from .channels import decrypt_group_text
 from .config import Config
 from .fleet import BULK_SETTINGS
@@ -245,6 +245,18 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/coverage")
     def coverage(size_m: int = 1500, days: int = 30):
         return analytics.coverage(st.store, max(250, min(size_m, 20000)), max(1, min(days, 365)))
+
+    # ---- terrain planning -----------------------------------------------------
+    app.include_router(planning.router(st.planner))
+
+    @app.post("/api/terrain/calibrate", dependencies=[Depends(may_change)])
+    def terrain_calibrate():
+        from .terrain import TerrainError
+
+        try:
+            return st.planner.recalibrate()
+        except TerrainError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     # ---- fleet ----------------------------------------------------------------
     @app.get("/api/fleet")

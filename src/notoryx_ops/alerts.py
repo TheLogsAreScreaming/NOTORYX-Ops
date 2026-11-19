@@ -14,6 +14,7 @@ from typing import Any
 
 from .config import Config
 from .ingest import Hub
+from .net import urlopen
 from .store import NODE_NOT_IGNORED, Store
 
 log = logging.getLogger(__name__)
@@ -156,7 +157,7 @@ def post_json(url: str, body: dict[str, Any], secret: str | None) -> bool:
     if secret:
         headers["X-Notoryx-Signature"] = "sha256=" + hmac.new(secret.encode(), data, hashlib.sha256).hexdigest()
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, data, headers, method="POST"), timeout=10) as r:
+        with urlopen(urllib.request.Request(url, data, headers, method="POST"), timeout=10) as r:
             return 200 <= r.status < 300
     except Exception as exc:  # noqa: BLE001
         log.warning("alert delivery failed: %s", exc)

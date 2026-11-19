@@ -5,6 +5,7 @@ Network dashboard and infrastructure station for MeshCore.
 NOTORYX Ops runs on a Raspberry Pi, a Mac or in Docker, next to a MeshCore companion radio. It has two sides:
 
 - **Analyzer:** decodes every packet heard by the station radio and by observers on MQTT brokers. It shows a live route map with a 24-hour replay and range rings, a node list that marks stale nodes and lets you ignore noisy ones, a packet feed with a decoder, channel messages, observer health, coverage hexes and analytics, including a one-byte prefix collision grid.
+- **Terrain planning:** coverage maps worked out from real elevation (Copernicus DEM), link profiles with line of sight, Fresnel zone and a link budget, high-ground finder, and "what if" relay planning that shows the area a new relay would add. Predictions can be calibrated against the links the station has measured.
 - **Fleet:** logs in to the repeaters you own and keeps their health over time: battery, noise floor, airtime, uptime, neighbours and firmware. It raises alerts when a repeater goes quiet, its battery is low or falling, its firmware is behind, or two repeaters share a prefix, and sends them to Discord or a webhook. Bulk settings change one setting on several repeaters after showing the current values.
 
 Status: first test version, **not yet tested with a real radio**. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).
@@ -30,6 +31,8 @@ Demo mode fills the dashboard with made-up traffic and a pretend fleet. Nothing 
 | `src/notoryx_ops/fleet.py` | Repeater polling, history, bulk settings |
 | `src/notoryx_ops/alerts.py` | Alert rules, Discord and webhook delivery |
 | `src/notoryx_ops/analytics.py` | Overview, heatmap, prefixes, links, coverage |
+| `src/notoryx_ops/terrain.py` | Elevation tiles, radio path model, coverage, high points, relay planning |
+| `src/notoryx_ops/planning.py` | Terrain API and calibration from measured links |
 | `src/notoryx_ops/server.py` | Web API and live updates |
 | `web/` | Dashboard (React, MapLibre, uPlot) |
 | `packaging/` | Docker and Raspberry Pi installer |
@@ -54,6 +57,8 @@ All code here is written from scratch. Ideas may come from other mesh tools, but
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Elevation data: Copernicus DEM, © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018, provided under COPERNICUS by the European Union and ESA. Tiles are downloaded on first use of an area; nothing is bundled.
 
 ---
 🛠️ AI-assisted: built with Anthropic's Claude, directed and reviewed by [BaconDisk22](https://github.com/BaconDisk22). Checked by automated tests and CI; review before relying on it.

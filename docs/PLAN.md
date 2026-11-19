@@ -16,7 +16,7 @@ Status: 2026-11-18. Milestones 1-5 built in the first version (0.1.0), not yet t
 | Channels | Group messages for channels you have keys for |
 | My fleet | Admin status of repeaters you own: battery, noise, airtime, uptime, firmware, history graphs |
 | Observers | Each observer's health and what it hears |
-| Coverage | Hex coverage from field captures, gaps, suggested repeater spots |
+| Coverage | Measured hex coverage and gaps; terrain coverage maps, link profiles, high ground, what-if relay planning, calibration from measured links |
 | Analytics | Activity heatmap, top nodes, prefix collision grid |
 | Alerts | Repeater quiet, battery low or falling, firmware behind, prefix clash; to Discord or webhooks |
 | Station | Radio link, brokers, polling schedule, retention, backups |

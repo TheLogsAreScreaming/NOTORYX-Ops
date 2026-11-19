@@ -15,6 +15,7 @@ from .demo import DemoNetwork, DemoRadio
 from .fleet import Fleet
 from .ingest import Hub, Ingest
 from .mqtt_ingest import MqttFeed
+from .planning import Planner
 from .radio import RadioLink
 from .store import Store
 
@@ -22,7 +23,7 @@ log = logging.getLogger(__name__)
 
 
 class Station:
-    def __init__(self, cfg: Config, store: Store | None = None):
+    def __init__(self, cfg: Config, store: Store | None = None, terrain_fetch=None):
         self.cfg = cfg
         self.started_at = time.time()
         self.store = store or Store(cfg.db_path)
@@ -39,6 +40,7 @@ class Station:
         self.mqtt = [MqttFeed(s, self.ingest) for s in cfg.mqtt]
         self.alerts = Alerts(cfg, self.store, self.hub)
         self.fleet = Fleet(cfg, self.store, self.radio, self.alerts, self.hub)
+        self.planner = Planner(cfg, self.store, fetch=terrain_fetch)
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
