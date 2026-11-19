@@ -43,6 +43,9 @@ jobs:
           tar -C pi -czf out/notoryx-ops-$V-pi.tar.gz notoryx-ops-$V-pi
           mkdir -p dk/notoryx-ops-$V-docker && cp "$WHL" packaging/docker/Dockerfile packaging/docker/docker-compose.yml dk/notoryx-ops-$V-docker/
           (cd dk && zip -qr ../out/notoryx-ops-$V-docker.zip notoryx-ops-$V-docker)
+          # The Meshtastic add-on is GPL-3.0 and ships as its own wheel, never inside the MIT bundles above.
+          python -m build --wheel --outdir addon-dist addons/meshtastic
+          cp addon-dist/*.whl out/
       - uses: actions/upload-artifact@v4
         with:
           name: parts-linux

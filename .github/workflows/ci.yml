@@ -24,6 +24,17 @@ jobs:
       - run: ruff check src tests
       - run: pytest -q
 
+  meshtastic-addon:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" -e "addons/meshtastic[dev]"
+      - run: ruff check addons/meshtastic
+      - run: cd addons/meshtastic && pytest -q
+
   dashboard:
     runs-on: ubuntu-24.04
     defaults:

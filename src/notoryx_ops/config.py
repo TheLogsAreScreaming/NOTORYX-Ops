@@ -193,6 +193,8 @@ class Config:
     ha_interval_s: int = 60
     pg_enabled: bool = False
     pg_dsn: str = ""
+    addons: dict = field(default_factory=dict)        # [addons.<id>] tables, owned by each add-on
+    addons_disabled: list = field(default_factory=list)
 
     @property
     def db_path(self) -> Path:
@@ -282,6 +284,9 @@ def load(path: Path | None = None) -> Config:
         pg_dsn=str(pg.get("dsn", "")),
     )
     cfg.public_precision = min(4, max(1, cfg.public_precision))
+    ad = dict(raw.get("addons", {}))
+    cfg.addons_disabled = [str(x) for x in ad.pop("disabled", [])]
+    cfg.addons = {k: dict(v) for k, v in ad.items() if isinstance(v, dict)}
     if cfg.terrain_source not in ("glo90", "glo30"):
         cfg.terrain_source = "glo90"
     if cfg.poll_minutes < 5:
