@@ -9,11 +9,13 @@ from dataclasses import asdict
 
 from . import __version__, settings
 from .alerts import Alerts
+from .auth import Auth
 from .channels import parse_channel
 from .config import Config
 from .demo import DemoNetwork, DemoRadio
 from .fleet import Fleet
 from .ingest import Hub, Ingest
+from .integrations import HomeAssistant, PostgresArchive
 from .mqtt_ingest import MqttFeed
 from .planning import Planner
 from .radio import RadioLink
@@ -41,6 +43,9 @@ class Station:
         self.alerts = Alerts(cfg, self.store, self.hub)
         self.fleet = Fleet(cfg, self.store, self.radio, self.alerts, self.hub)
         self.planner = Planner(cfg, self.store, fetch=terrain_fetch)
+        self.auth = Auth(cfg, self.store)
+        self.ha = HomeAssistant(cfg, self.store, self)
+        self.pg = PostgresArchive(cfg, self.store)
 
     async def start(self) -> None:
         loop = asyncio.get_running_loop()
@@ -55,6 +60,8 @@ class Station:
         for m in self.mqtt:
             m.start(loop)
         self.fleet.start()
+        self.ha.start()
+        self.pg.start()
 
     def _radio_key(self) -> tuple:
         c = self.cfg
@@ -63,6 +70,9 @@ class Station:
     async def apply_settings(self, data: dict) -> list[str]:
         """Validate and save settings from the dashboard, then apply them without a restart where possible."""
         radio_before = self._radio_key()
+        ha_before = (self.cfg.ha_enabled, self.cfg.ha_host, self.cfg.ha_port, self.cfg.ha_username, self.cfg.ha_password,
+                     self.cfg.ha_tls, self.cfg.ha_prefix)
+        pg_before = (self.cfg.pg_enabled, self.cfg.pg_dsn)
         mqtt_before = [asdict(m) for m in self.cfg.mqtt]
         restart = settings.apply_changes(self.cfg, data)
         settings.save(self.cfg)
@@ -87,6 +97,14 @@ class Station:
             loop = asyncio.get_running_loop()
             for m in self.mqtt:
                 m.start(loop)
+        ha_after = (self.cfg.ha_enabled, self.cfg.ha_host, self.cfg.ha_port, self.cfg.ha_username, self.cfg.ha_password,
+                    self.cfg.ha_tls, self.cfg.ha_prefix)
+        if ha_after != ha_before:
+            self.ha.stop()
+            self.ha.start()
+        if (self.cfg.pg_enabled, self.cfg.pg_dsn) != pg_before:
+            self.pg.stop()
+            self.pg.start()
         self.alerts.evaluate()
         return restart
 
@@ -94,6 +112,8 @@ class Station:
         await self.radio.stop()
         for m in self.mqtt:
             m.stop()
+        self.ha.stop()
+        self.pg.stop()
 
     def info(self) -> dict:
         return {
@@ -110,4 +130,7 @@ class Station:
             "config_path": str(self.cfg.path),
             "changes_need_token": bool(self.cfg.admin_token),
             "stale_after_hours": self.cfg.stale_after_hours,
+            "homeassistant": self.ha.info(),
+            "postgres": self.pg.info(),
+            "public_map": self.cfg.public_map,
         }

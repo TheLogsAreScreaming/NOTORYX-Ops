@@ -1,6 +1,8 @@
 import { ReactNode, useEffect, useState } from "react";
 import { ago, api, getToken, setToken, unignoreNode, useApi } from "../api";
 import { LookGallery } from "../components/ThemePicker";
+import Accounts from "../components/Accounts";
+import { useMe } from "../auth";
 
 type S = any;
 
@@ -73,10 +75,15 @@ export default function Settings() {
   const [discord, setDiscord] = useState<string | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [mqttPw, setMqttPw] = useState<Record<number, string | null>>({});
+  const [metricsTok, setMetricsTok] = useState<string | null>(null);
+  const [haPw, setHaPw] = useState<string | null>(null);
+  const [pgDsn, setPgDsn] = useState<string | null>(null);
+  const [intMsg, setIntMsg] = useState("");
+  const me = useMe();
 
   const load = () =>
     api("/api/settings")
-      .then((d) => (setS(d), setTok(null), setDiscord(null), setSecret(null), setMqttPw({})))
+      .then((d) => (setS(d), setTok(null), setDiscord(null), setSecret(null), setMqttPw({}), setMetricsTok(null), setHaPw(null), setPgDsn(null)))
       .catch((e) => setErr(e.message));
   useEffect(() => {
     load();
@@ -109,6 +116,9 @@ export default function Settings() {
       channels: s.channels,
       fleet: s.fleet,
       terrain: s.terrain,
+      integrations: { ...s.integrations, metrics_token: metricsTok },
+      homeassistant: { ...s.homeassistant, password: haPw },
+      postgres: { enabled: s.postgres.enabled, dsn: pgDsn },
       alerts: { webhook_url: s.alerts.webhook_url, discord_webhook: discord, webhook_secret: secret },
       mqtt: s.mqtt.map((m: any, i: number) => ({ ...m, password: mqttPw[i] === undefined ? null : mqttPw[i] })),
     };
@@ -120,6 +130,9 @@ export default function Settings() {
         setDiscord(null);
         setSecret(null);
         setMqttPw({});
+        setMetricsTok(null);
+        setHaPw(null);
+        setPgDsn(null);
         setMsg(r.restart_needed.length
           ? "Saved. The new address or port takes effect after you restart the station."
           : "Saved and applied.");
@@ -289,6 +302,79 @@ export default function Settings() {
         </div>
 
         <div className="card">
+          <h2>Exports and metrics</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>Download what the station knows, or let Prometheus read it.</div>
+          <div className="row" style={{ marginBottom: 10 }}>
+            <a className="btn" href="/api/export/nodes.geojson">Nodes (GeoJSON)</a>
+            <a className="btn" href="/api/export/links.geojson">Links (GeoJSON)</a>
+            <a className="btn" href="/api/export/nodes.gpx">Nodes (GPX)</a>
+          </div>
+          <Field label="Prometheus" hint={me?.accounts_on ? "With accounts on, Prometheus needs this token as a bearer token." : "Open to anyone who can reach the dashboard. Turn accounts on to protect it."}>
+            <span className="mono small">{location.origin}/metrics</span>
+          </Field>
+          <Field label="Metrics token">
+            <Secret isSet={s.integrations.metrics_token_set} value={metricsTok} onChange={setMetricsTok} placeholder="12+ characters" />
+          </Field>
+        </div>
+
+        <div className="card">
+          <h2>Public map</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>
+            A read-only map at <a href="/public">/public</a> that works without signing in. It shows repeaters with rounded positions and nothing about your fleet.
+          </div>
+          <div className="formgrid">
+            <Field label="Public map"><input type="checkbox" checked={!!s.integrations.public_map} onChange={(e) => set("integrations.public_map", e.target.checked)} /></Field>
+            <Field label="Title"><input value={s.integrations.public_title} placeholder={s.station.name} onChange={(e) => set("integrations.public_title", e.target.value)} /></Field>
+            <Field label="Position detail">
+              <select value={s.integrations.public_precision} onChange={(e) => set("integrations.public_precision", Number(e.target.value))}>
+                <option value={1}>About 10 km</option>
+                <option value={2}>About 1 km</option>
+                <option value={3}>About 100 m</option>
+                <option value={4}>About 10 m</option>
+              </select>
+            </Field>
+            <Field label="Show companions too"><input type="checkbox" checked={!!s.integrations.public_show_companions} onChange={(e) => set("integrations.public_show_companions", e.target.checked)} /></Field>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Home Assistant</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>
+            Publishes station sensors and one device per fleet repeater (online, battery, noise floor, SNR) to the MQTT broker Home Assistant uses. Discovery adds them automatically.
+          </div>
+          <div className="formgrid">
+            <Field label="Turned on"><input type="checkbox" checked={!!s.homeassistant.enabled} onChange={(e) => set("homeassistant.enabled", e.target.checked)} /></Field>
+            <Field label="Broker address"><input value={s.homeassistant.host} placeholder="homeassistant.local" onChange={(e) => set("homeassistant.host", e.target.value)} /></Field>
+            <Field label="Port"><input type="number" value={s.homeassistant.port} onChange={(e) => set("homeassistant.port", Number(e.target.value))} /></Field>
+            <Field label="Username"><input value={s.homeassistant.username} autoComplete="off" onChange={(e) => set("homeassistant.username", e.target.value)} /></Field>
+            <Field label="Password"><Secret isSet={s.homeassistant.password_set} value={haPw} onChange={setHaPw} placeholder="broker password" /></Field>
+            <Field label="TLS"><input type="checkbox" checked={!!s.homeassistant.tls} onChange={(e) => set("homeassistant.tls", e.target.checked)} /></Field>
+            <Field label="Discovery prefix"><input value={s.homeassistant.prefix} onChange={(e) => set("homeassistant.prefix", e.target.value)} /></Field>
+            <Field label="Seconds between updates"><input type="number" min={15} value={s.homeassistant.interval_s} onChange={(e) => set("homeassistant.interval_s", Number(e.target.value))} /></Field>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" onClick={() => api<any>("/api/integrations/homeassistant/test", { method: "POST" }).then((r) => setIntMsg(`Sent ${r.sent} sensors to Home Assistant.`)).catch((e) => setIntMsg(e.message))}>Send now</button>
+            <span className="small faint">Save first.</span>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>PostgreSQL archive</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>
+            Copies packets, messages, fleet history and alerts to PostgreSQL every minute, so history outlasts this station's own retention. Needs <span className="mono">pip install "notoryx-ops[postgres]"</span>.
+          </div>
+          <div className="formgrid">
+            <Field label="Turned on"><input type="checkbox" checked={!!s.postgres.enabled} onChange={(e) => set("postgres.enabled", e.target.checked)} /></Field>
+            <Field label="Connection"><Secret isSet={s.postgres.dsn_set} value={pgDsn} onChange={setPgDsn} placeholder="postgresql://user:pass@host/db" /></Field>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" onClick={() => api<any>("/api/integrations/postgres/run", { method: "POST" }).then((r) => setIntMsg(`Copied ${r.copied} new rows to PostgreSQL.`)).catch((e) => setIntMsg(e.message))}>Copy now</button>
+            <span className="small faint">Save first.</span>
+          </div>
+          {intMsg && <div className="small" role="status" style={{ marginTop: 6 }}>{intMsg}</div>}
+        </div>
+
+        <div className="card">
           <h2>Alerts</h2>
           <div className="stack">
             <Field label="Discord webhook">
@@ -392,6 +478,8 @@ export default function Settings() {
           )}
         </div>
       </div>
+      <Accounts me={me} />
+
       <div className="row" style={{ justifyContent: "flex-end", marginTop: 4 }}>
         {msg && <span className="small" style={{ color: "var(--ok)" }} role="status">{msg}</span>}
         {err && <span className="small" style={{ color: "var(--bad)" }} role="alert">{err}</span>}

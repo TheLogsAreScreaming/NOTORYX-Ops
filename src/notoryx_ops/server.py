@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-import ipaddress
 import json
 import os
 import re
@@ -15,11 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, planning, settings
+from . import analytics, decoder, integrations, planning, settings
+from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
 from .fleet import BULK_SETTINGS
@@ -63,6 +63,23 @@ class IgnoreIn(BaseModel):
     name: str | None = Field(default=None, max_length=60)
 
 
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=32)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class UserIn(BaseModel):
+    username: str = Field(min_length=2, max_length=32)
+    password: str = Field(min_length=10, max_length=200)
+    role: str = "viewer"
+
+
+class UserPatch(BaseModel):
+    role: str | None = None
+    password: str | None = Field(default=None, max_length=200)
+    disabled: bool | None = None
+
+
 class DecodeIn(BaseModel):
     raw: str = Field(max_length=1200)
 
@@ -81,21 +98,93 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     app = FastAPI(title="NOTORYX Ops", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.station = st
 
-    def may_change(request: Request) -> None:
-        """Changes need the admin token when one is set; without one, only this computer may change things."""
-        token = cfg.admin_token
-        if token:
-            got = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
-            if not hmac.compare_digest(got.encode(), token.encode()):
-                raise HTTPException(401, "This change needs the station's admin token.")
-            return
-        host = request.client.host if request.client else ""
-        try:
-            local = ipaddress.ip_address(host).is_loopback
-        except ValueError:
-            local = host in ("localhost", "testclient")
-        if not local:
-            raise HTTPException(403, "Changes only work from the station computer unless an admin token is set.")
+    auth = st.auth
+
+    def operator(request: Request) -> None:
+        auth.require(request, "operator")
+
+    def admin(request: Request) -> None:
+        auth.require(request, "admin")
+
+    # Paths anyone may open even when accounts are on.
+    open_paths = ("/api/auth/", "/api/public/")
+
+    @app.middleware("http")
+    async def need_sign_in(request: Request, call_next):
+        path = request.url.path
+        guarded = path.startswith("/api/") or path == "/metrics"
+        if guarded and not path.startswith(open_paths) and auth.accounts_on():
+            if path == "/metrics" and cfg.metrics_token:
+                got = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+                if hmac.compare_digest(got.encode(), cfg.metrics_token.encode()):
+                    return await call_next(request)
+            if auth.principal(request) is None:
+                return JSONResponse({"detail": "Sign in first."}, status_code=401)
+        return await call_next(request)
+
+    # ---- accounts -------------------------------------------------------------
+    @app.get("/api/auth/me")
+    def auth_me(request: Request):
+        who = auth.principal(request)
+        on = auth.accounts_on()
+        return {"accounts_on": on, "user": who, "local": is_local(request),
+                "public_map": cfg.public_map,
+                "can_change": bool(who and RANK[who["role"]] >= RANK["operator"]) if on
+                else bool(who) or (not cfg.admin_token and is_local(request)),
+                "is_admin": bool(who and who["role"] == "admin") if on
+                else bool(who) or (not cfg.admin_token and is_local(request))}
+
+    def set_cookie(request: Request, resp: JSONResponse, tok: str) -> JSONResponse:
+        resp.set_cookie(COOKIE, tok, max_age=SESSION_DAYS * 86400, httponly=True, samesite="strict",
+                        secure=request.url.scheme == "https", path="/")
+        return resp
+
+    @app.post("/api/auth/login")
+    def auth_login(body: LoginIn, request: Request):
+        tok, user = auth.login(request, body.username, body.password)
+        st.store.audit("sign_in", {"user": user["username"]})
+        return set_cookie(request, JSONResponse({"user": user}), tok)
+
+    @app.post("/api/auth/logout")
+    def auth_logout(request: Request):
+        auth.logout(request.cookies.get(COOKIE))
+        resp = JSONResponse({"ok": True})
+        resp.delete_cookie(COOKIE, path="/")
+        return resp
+
+    @app.post("/api/auth/setup")
+    def auth_setup(body: LoginIn, request: Request):
+        """Create the first admin account. Allowed only while there are none, under the old change rules."""
+        if auth.accounts_on():
+            raise HTTPException(409, "Accounts are already set up. Sign in as an admin to add more.")
+        auth.require(request, "admin")
+        auth.add_user(body.username, body.password, "admin")
+        tok, user = auth.login(request, body.username, body.password)
+        st.store.audit("accounts_on", {"user": user["username"]})
+        return set_cookie(request, JSONResponse({"user": user}), tok)
+
+    @app.get("/api/users", dependencies=[Depends(admin)])
+    def users_list():
+        return auth.users()
+
+    @app.post("/api/users", dependencies=[Depends(admin)])
+    def users_add(body: UserIn):
+        uid = auth.add_user(body.username, body.password, body.role)
+        st.store.audit("user_add", {"user": body.username, "role": body.role})
+        return {"id": uid}
+
+    @app.patch("/api/users/{uid}", dependencies=[Depends(admin)])
+    def users_update(uid: int, body: UserPatch):
+        auth.update_user(uid, body.role, body.password, body.disabled)
+        st.store.audit("user_change", {"id": uid, "role": body.role, "disabled": body.disabled,
+                                       "password": body.password is not None})
+        return {"ok": True}
+
+    @app.delete("/api/users/{uid}", dependencies=[Depends(admin)])
+    def users_remove(uid: int):
+        auth.remove_user(uid)
+        st.store.audit("user_remove", {"id": uid})
+        return {"ok": True}
 
     @app.exception_handler(RadioError)
     async def radio_error(_req, exc: RadioError):
@@ -110,7 +199,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def station_info():
         return st.info()
 
-    @app.post("/api/station/stop", dependencies=[Depends(may_change)])
+    @app.post("/api/station/stop", dependencies=[Depends(admin)])
     async def station_stop():
         """Stop the station process. The Mac app has no window, so the dashboard offers this."""
         asyncio.get_running_loop().call_later(0.5, os.kill, os.getpid(), signal.SIGINT)
@@ -182,7 +271,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def ignored_list():
         return mark(st.store.ignored(), key=None)
 
-    @app.post("/api/ignored", dependencies=[Depends(may_change)])
+    @app.post("/api/ignored", dependencies=[Depends(operator)])
     def ignore_node(body: IgnoreIn):
         key = body.public_key.lower()
         added = st.store.ignore(key, body.name)
@@ -191,7 +280,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             st.store.audit("ignore_node", {"public_key": key})
         return {"ok": True, "added": added, "alerts_cleared": cleared}
 
-    @app.delete("/api/ignored/{public_key}", dependencies=[Depends(may_change)])
+    @app.delete("/api/ignored/{public_key}", dependencies=[Depends(operator)])
     def unignore_node(public_key: str):
         if not re.fullmatch(r"[0-9a-fA-F]{64}", public_key):
             raise HTTPException(400, "That isn't a node's full public key.")
@@ -246,10 +335,61 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def coverage(size_m: int = 1500, days: int = 30):
         return analytics.coverage(st.store, max(250, min(size_m, 20000)), max(1, min(days, 365)))
 
+    # ---- exports, metrics, public map ------------------------------------------
+    def download(body: str, name: str, media: str) -> Response:
+        return Response(body, media_type=media, headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    @app.get("/api/export/nodes.geojson")
+    def export_nodes_geojson(days: int = 30):
+        return download(json.dumps(integrations.nodes_geojson(st.store, max(1, min(days, 365)))),
+                        "notoryx-ops-nodes.geojson", "application/geo+json")
+
+    @app.get("/api/export/links.geojson")
+    def export_links_geojson(hours: int = 24):
+        return download(json.dumps(integrations.links_geojson(st.store, max(1, min(hours, 24 * 14)))),
+                        "notoryx-ops-links.geojson", "application/geo+json")
+
+    @app.get("/api/export/nodes.gpx")
+    def export_nodes_gpx(days: int = 30):
+        return download(integrations.nodes_gpx(st.store, max(1, min(days, 365)), cfg.name),
+                        "notoryx-ops-nodes.gpx", "application/gpx+xml")
+
+    @app.get("/metrics", include_in_schema=False)
+    def prom_metrics():
+        return PlainTextResponse(integrations.metrics(st.store, st), media_type="text/plain; version=0.0.4")
+
+    @app.get("/api/public/map")
+    def public_map():
+        if not cfg.public_map:
+            raise HTTPException(404, "The public map is off.")
+        return integrations.public_view(st.store, cfg)
+
+    @app.post("/api/integrations/homeassistant/test", dependencies=[Depends(admin)])
+    async def ha_test():
+        if not (cfg.ha_enabled and cfg.ha_host):
+            raise HTTPException(400, "Turn on Home Assistant and enter its MQTT broker first.")
+        if st.ha.client is None:
+            try:
+                st.ha.client = await asyncio.to_thread(st.ha._connect)
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(503, f"Couldn't reach the broker: {exc}") from exc
+        return {"sent": st.ha.publish_once()}
+
+    @app.post("/api/integrations/postgres/run", dependencies=[Depends(admin)])
+    async def pg_run():
+        if not cfg.pg_dsn:
+            raise HTTPException(400, "Enter the PostgreSQL connection first.")
+        try:
+            n = await asyncio.to_thread(st.pg.run_once)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(503, f"PostgreSQL copy failed: {str(exc).splitlines()[0][:300]}") from exc
+        st.pg.copied += n
+        return {"copied": n}
+
     # ---- terrain planning -----------------------------------------------------
     app.include_router(planning.router(st.planner))
 
-    @app.post("/api/terrain/calibrate", dependencies=[Depends(may_change)])
+    @app.post("/api/terrain/calibrate", dependencies=[Depends(operator)])
     def terrain_calibrate():
         from .terrain import TerrainError
 
@@ -263,7 +403,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def fleet():
         return st.fleet.overview()
 
-    @app.post("/api/fleet", dependencies=[Depends(may_change)])
+    @app.post("/api/fleet", dependencies=[Depends(operator)])
     def fleet_add(body: RepeaterIn):
         try:
             rid = st.fleet.add(body.public_key, body.name, body.password, body.notes)
@@ -273,7 +413,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             raise
         return {"id": rid}
 
-    @app.patch("/api/fleet/{rid}", dependencies=[Depends(may_change)])
+    @app.patch("/api/fleet/{rid}", dependencies=[Depends(operator)])
     def fleet_update(rid: int, body: RepeaterPatch):
         fields: dict[str, Any] = body.model_dump()
         if fields.get("enabled") is not None:
@@ -281,7 +421,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         st.fleet.update(rid, **fields)
         return {"ok": True}
 
-    @app.delete("/api/fleet/{rid}", dependencies=[Depends(may_change)])
+    @app.delete("/api/fleet/{rid}", dependencies=[Depends(operator)])
     def fleet_remove(rid: int):
         st.fleet.remove(rid)
         return {"ok": True}
@@ -290,7 +430,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def fleet_history(rid: int, days: float = 7):
         return st.store.status_history(rid, time.time() - max(0.1, min(days, 365)) * 86400)
 
-    @app.post("/api/fleet/poll", dependencies=[Depends(may_change)])
+    @app.post("/api/fleet/poll", dependencies=[Depends(operator)])
     def fleet_poll():
         if not st.radio.connected:
             raise HTTPException(503, "The station radio isn't connected.")
@@ -300,11 +440,11 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def bulk_settings():
         return sorted(BULK_SETTINGS)
 
-    @app.post("/api/fleet/bulk/preview", dependencies=[Depends(may_change)])
+    @app.post("/api/fleet/bulk/preview", dependencies=[Depends(operator)])
     async def bulk_preview(body: BulkIn):
         return await st.fleet.bulk_preview(body.ids, body.key, body.value)
 
-    @app.post("/api/fleet/bulk/apply", dependencies=[Depends(may_change)])
+    @app.post("/api/fleet/bulk/apply", dependencies=[Depends(operator)])
     async def bulk_apply(body: BulkIn):
         return await st.fleet.bulk_apply(body.ids, body.key, body.value, body.confirm)
 
@@ -313,16 +453,16 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def settings_get():
         return settings.public_view(cfg)
 
-    @app.put("/api/settings", dependencies=[Depends(may_change)])
+    @app.put("/api/settings", dependencies=[Depends(admin)])
     async def settings_put(body: dict[str, Any]):
         restart = await st.apply_settings(body)
         return {"saved": True, "restart_needed": restart, "settings": settings.public_view(cfg)}
 
-    @app.get("/api/settings/serial-ports", dependencies=[Depends(may_change)])
+    @app.get("/api/settings/serial-ports", dependencies=[Depends(admin)])
     def settings_serial():
         return settings.serial_ports()
 
-    @app.get("/api/settings/ble-scan", dependencies=[Depends(may_change)])
+    @app.get("/api/settings/ble-scan", dependencies=[Depends(admin)])
     async def settings_ble():
         try:
             return await settings.ble_devices()
@@ -330,7 +470,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             raise HTTPException(503, f"Bluetooth scan failed: {exc}. Check that Bluetooth is on and allowed for NOTORYX Ops.") from exc
 
     # ---- alerts ---------------------------------------------------------------
-    @app.post("/api/alerts/test", dependencies=[Depends(may_change)])
+    @app.post("/api/alerts/test", dependencies=[Depends(operator)])
     async def alert_test():
         if not (cfg.discord_webhook or cfg.webhook_url):
             raise HTTPException(400, "Add a Discord webhook or a webhook URL first.")
@@ -353,12 +493,12 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             sql += " WHERE resolved_at IS NULL"
         return st.store.q(sql + " ORDER BY created_at DESC LIMIT ?", (min(limit, 1000),))
 
-    @app.post("/api/alerts/{aid}/resolve", dependencies=[Depends(may_change)])
+    @app.post("/api/alerts/{aid}/resolve", dependencies=[Depends(operator)])
     def alert_resolve(aid: int):
         st.store.x("UPDATE alerts SET resolved_at = ? WHERE id = ? AND resolved_at IS NULL", (time.time(), aid))
         return {"ok": True}
 
-    @app.post("/api/alerts/check", dependencies=[Depends(may_change)])
+    @app.post("/api/alerts/check", dependencies=[Depends(operator)])
     def alert_check():
         st.alerts.evaluate()
         return {"ok": True}
@@ -366,6 +506,9 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     # ---- live updates ---------------------------------------------------------
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
+        if auth.accounts_on() and auth.session_user(sock.cookies.get(COOKIE)) is None:
+            await sock.close(code=4401)
+            return
         await sock.accept()
         q = st.hub.subscribe()
         try:

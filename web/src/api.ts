@@ -82,6 +82,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   if (!r.ok) {
+    if (r.status === 401) window.dispatchEvent(new Event("notoryx-signin"));
     let msg = `${r.status} ${r.statusText}`;
     try {
       const j = await r.json();
