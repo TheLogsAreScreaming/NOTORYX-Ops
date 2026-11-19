@@ -95,7 +95,8 @@ def router(addon) -> APIRouter:
                 "meshcore_channels": [c.name for c in addon.station.channels]}
 
     @r.put("/settings")
-    def put_settings(body: SettingsIn, request: Request):
+    async def put_settings(body: SettingsIn, request: Request):
+        # async on purpose: reconnecting starts a task, which needs the station's event loop.
         need(request, "admin")
         s = addon.settings
         new = body.model_dump(exclude_none=True)
