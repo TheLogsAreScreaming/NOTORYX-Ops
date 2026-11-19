@@ -35,7 +35,20 @@ export type Node = {
   adverts: number;
   best_snr: number | null;
   direct_observers: string[];
+  /** Not heard for longer than the station's "Mark nodes stale after" setting. */
+  stale?: boolean;
+  /** On the station's ignore list (only returned with include_ignored=true). */
+  ignored?: boolean;
 };
+
+/** Hide a node everywhere on this station. Its packets are still stored. */
+export function ignoreNode(publicKey: string, name?: string | null) {
+  return api("/api/ignored", { method: "POST", body: { public_key: publicKey, name: name ?? null } });
+}
+
+export function unignoreNode(publicKey: string) {
+  return api(`/api/ignored/${publicKey}`, { method: "DELETE" });
+}
 
 export type LiveEvent = { type: string; [k: string]: any };
 

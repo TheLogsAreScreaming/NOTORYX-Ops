@@ -1,4 +1,5 @@
 import { ago, fmt, useApi } from "../api";
+import { StaleTag } from "../components/NodeTags";
 
 export default function Observers() {
   const { data, error } = useApi<any[]>("/api/observers", 30000);
@@ -18,6 +19,7 @@ export default function Observers() {
               <h2>
                 {o.name}
                 <span className={`pill ${o.live ? "ok" : "bad"}`}>{o.live ? "Live" : "Quiet"}</span>
+                <StaleTag stale={o.stale} lastHeard={o.last_seen} />
               </h2>
               <div className="tiles" style={{ marginBottom: 8 }}>
                 <div className="tile"><div className="k">Packets 24 h</div><div className="v">{o.packets_24h}</div></div>

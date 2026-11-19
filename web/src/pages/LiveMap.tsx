@@ -2,11 +2,37 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MlMap, GeoJSONSource } from "maplibre-gl";
 import MapView, { fitTo } from "../components/MapView";
 import { currentTheme, nodeColor, onTheme, routeColor, snrColor } from "../themes";
-import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, makeResolver, useApi, useLive } from "../api";
+import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, duration, ignoreNode, makeResolver, useApi, useLive } from "../api";
+import { UNITS, distanceM, ringFeatures, ringStep } from "../rings";
 
 const ROUTE_MS = 2600;
 const SPEEDS = [1, 10, 60, 300];
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+const RINGS_KEY = "notoryx-ops-range-rings";
+
+function loadRings(): boolean {
+  try {
+    return localStorage.getItem(RINGS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveRings(on: boolean) {
+  try {
+    localStorage.setItem(RINGS_KEY, on ? "1" : "0");
+  } catch {
+    /* storage blocked: the choice lasts for this page only */
+  }
+}
+
+/** The station radio's position, or null when it isn't known (radios report 0, 0 when unset). */
+function stationPos(info: any): [number, number] | null {
+  const lat = info?.radio?.lat;
+  const lon = info?.radio?.lon;
+  if (typeof lat !== "number" || typeof lon !== "number" || (lat === 0 && lon === 0)) return null;
+  return [lon, lat];
+}
 
 type Route = { coords: [number, number][]; born: number; color: string };
 type ReplayRow = Pick<Packet, "hash" | "ptype" | "route" | "path" | "node_key" | "src_hash" | "summary"> & { t: number; heard: number };
@@ -36,7 +62,10 @@ function partial(coords: [number, number][], f: number): [number, number][] {
 }
 
 export default function LiveMap() {
-  const { data: nodes } = useApi<Node[]>("/api/nodes", 60000);
+  // Every node, ignored ones included, so path hashes resolve the same way; ignored ones are never drawn.
+  const { data: nodes, reload: reloadNodes } = useApi<Node[]>("/api/nodes?include_ignored=true", 60000);
+  const { data: info } = useApi<any>("/api/station", 60000);
+  const [rings, setRings] = useState(loadRings);
   const { data: fleet } = useApi<any[]>("/api/fleet", 60000);
   const { data: links } = useApi<any[]>("/api/links", 120000);
   const [feed, setFeed] = useState<Packet[]>([]);
@@ -56,6 +85,7 @@ export default function LiveMap() {
 
   const resolve = useMemo(() => makeResolver(nodes || []), [nodes]);
   const byKey = useMemo(() => new Map((nodes || []).map((n) => [n.public_key, n])), [nodes]);
+  const home = stationPos(info);
   const fleetKeys = useMemo(() => new Map((fleet || []).map((f) => [f.public_key, f])), [fleet]);
 
   useEffect(() => {
@@ -65,11 +95,12 @@ export default function LiveMap() {
   function animate(p: { ptype: string; path: string[]; node_key: string | null; src_hash: string | null }) {
     const pts: [number, number][] = [];
     const origin = p.node_key ? byKey.get(p.node_key) : resolve(p.src_hash);
-    if (origin?.lat != null && origin.lon != null) pts.push([origin.lon, origin.lat]);
+    if (origin?.ignored && p.node_key) return;
+    if (origin?.lat != null && origin.lon != null && !origin.ignored) pts.push([origin.lon, origin.lat]);
     if (p.ptype !== "trace") {
       for (const h of p.path) {
         const n = resolve(h);
-        if (n?.lat != null && n.lon != null) {
+        if (n?.lat != null && n.lon != null && !n.ignored) {
           const last = pts[pts.length - 1];
           if (!last || last[0] !== n.lon || last[1] !== n.lat) pts.push([n.lon, n.lat]);
         }
@@ -91,7 +122,7 @@ export default function LiveMap() {
 
   // Static layers: links and nodes.
   function drawStatic(m: MlMap) {
-    const located = (nodes || []).filter((n) => n.lat != null && n.lon != null);
+    const located = (nodes || []).filter((n) => n.lat != null && n.lon != null && !n.ignored);
     const nodeFc: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
       features: located.map((n) => {
@@ -107,6 +138,7 @@ export default function LiveMap() {
             color: nodeColor(n.node_type),
             owned: f ? (down ? 2 : 1) : 0,
             big: n.node_type === "repeater" || n.node_type === "room" ? 1 : 0,
+            stale: n.stale ? 1 : 0,
           },
         };
       }),
@@ -117,7 +149,7 @@ export default function LiveMap() {
         .map((l) => {
           const a = byKey.get(l.a);
           const b = byKey.get(l.b);
-          if (a?.lat == null || b?.lat == null) return null;
+          if (a?.lat == null || b?.lat == null || a.ignored || b.ignored) return null;
           return {
             type: "Feature",
             geometry: { type: "LineString", coordinates: [[a.lon!, a.lat!], [b.lon!, b.lat!]] },
@@ -141,18 +173,37 @@ export default function LiveMap() {
       m.addLayer({ id: "routes", type: "line", source: "routes", layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": ["get", "o"] } });
       m.addLayer({ id: "pings", type: "circle", source: "pings", paint: { "circle-radius": ["get", "r"], "circle-color": "rgba(0,0,0,0)", "circle-stroke-color": ["get", "color"], "circle-stroke-width": 2, "circle-stroke-opacity": ["get", "o"] } });
       m.addLayer({ id: "owned", type: "circle", source: "nodes", filter: [">", ["get", "owned"], 0], paint: { "circle-radius": 13, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 2.5, "circle-stroke-color": ["case", ["==", ["get", "owned"], 2], t.ui.bad, t.ui.accent] } });
-      m.addLayer({ id: "nodes", type: "circle", source: "nodes", paint: { "circle-radius": ["case", ["==", ["get", "big"], 1], 7, 4.5], "circle-color": ["get", "color"], "circle-stroke-color": t.map.land, "circle-stroke-width": 1.5 } });
-      m.addLayer({ id: "labels", type: "symbol", source: "nodes", filter: ["==", ["get", "big"], 1], minzoom: 9, layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.4], "text-anchor": "top" }, paint: { "text-color": t.map.label, "text-halo-color": t.map.halo, "text-halo-width": 1.2 } });
+      // Stale nodes are drawn faded and smaller, with a dashed-look hollow centre, not only a colour change.
+      const fade = (on: number, off: number): any => ["case", ["==", ["get", "stale"], 1], on, off];
+      m.addLayer({ id: "nodes", type: "circle", source: "nodes", paint: { "circle-radius": ["case", ["==", ["get", "big"], 1], fade(5.5, 7), fade(3.5, 4.5)], "circle-color": ["get", "color"], "circle-opacity": fade(0.3, 1), "circle-stroke-color": t.map.land, "circle-stroke-width": 1.5, "circle-stroke-opacity": fade(0.5, 1) } });
+      m.addLayer({ id: "labels", type: "symbol", source: "nodes", filter: ["==", ["get", "big"], 1], minzoom: 9, layout: { "text-field": ["case", ["==", ["get", "stale"], 1], ["concat", ["get", "name"], " (stale)"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.4], "text-anchor": "top" }, paint: { "text-color": t.map.label, "text-halo-color": t.map.halo, "text-halo-width": 1.2, "text-opacity": fade(0.55, 1) } });
       m.on("click", "nodes", (e) => {
         const f = e.features?.[0];
         if (!f) return;
         const n = byKeyRef.current.get(f.properties!.key);
-        new maplibregl.Popup({ closeButton: true })
+        const stale = n?.stale ? ` <span class="pill stale">stale · ${duration(Date.now() / 1000 - n.last_seen)}</span>` : "";
+        const pop = new maplibregl.Popup({ closeButton: true })
           .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
           .setHTML(
-            `<strong>${escapeHtml(f.properties!.name)}</strong><br/>${f.properties!.type} · prefix ${n?.prefix.toUpperCase() ?? ""}<br/>Last heard ${ago(n?.last_seen)}${n?.best_snr != null ? `<br/>Best SNR ${n.best_snr}` : ""}`,
+            `<strong>${escapeHtml(f.properties!.name)}</strong><br/>${f.properties!.type} · prefix ${n?.prefix.toUpperCase() ?? ""}<br/>Last heard ${ago(n?.last_seen)}${stale}${n?.best_snr != null ? `<br/>Best SNR ${n.best_snr}` : ""}` +
+              `<div class="popup-actions"><button type="button" class="small-btn" data-ignore>Ignore</button> <span class="err small" data-err></span></div>`,
           )
           .addTo(m);
+        const btn = pop.getElement().querySelector<HTMLButtonElement>("[data-ignore]");
+        btn?.setAttribute("aria-label", `Ignore ${f.properties!.name}`);
+        btn?.addEventListener("click", () => {
+          btn.disabled = true;
+          ignoreNode(f.properties!.key, n?.name)
+            .then(() => {
+              pop.remove();
+              reloadRef.current();
+            })
+            .catch((e) => {
+              btn.disabled = false;
+              const el = pop.getElement().querySelector("[data-err]");
+              if (el) el.textContent = e.message;
+            });
+        });
       });
       m.on("mouseenter", "nodes", () => (m.getCanvas().style.cursor = "pointer"));
       m.on("mouseleave", "nodes", () => (m.getCanvas().style.cursor = ""));
@@ -165,9 +216,51 @@ export default function LiveMap() {
       fitted.current = true;
       fitTo(m, located.map((n) => [n.lon!, n.lat!]), { top: 40, bottom: 80, left: 200, right: 380 });
     }
+    drawRings(m);
   }
   const byKeyRef = useRef(byKey);
   byKeyRef.current = byKey;
+  const reloadRef = useRef(reloadNodes);
+  reloadRef.current = reloadNodes;
+
+  // Range rings around the station radio, sized to the visible view.
+  const ringState = useRef<{ on: boolean; home: [number, number] | null }>({ on: rings, home });
+  ringState.current = { on: rings, home };
+  function drawRings(m: MlMap) {
+    const { on, home: at } = ringState.current;
+    const t = currentTheme();
+    let lines = EMPTY;
+    let labels = EMPTY;
+    if (on && at) {
+      const c = m.getCenter();
+      const b = m.getBounds();
+      const span = Math.min(distanceM(c.lat, c.lng, c.lat, b.getEast()), distanceM(c.lat, c.lng, b.getNorth(), c.lng));
+      const fc = ringFeatures(at[1], at[0], ringStep(span, UNITS), UNITS);
+      lines = fc.lines;
+      labels = fc.labels;
+    }
+    for (const [id, data] of [["rings", lines], ["ringlabels", labels]] as const) {
+      const src = m.getSource(id) as GeoJSONSource | undefined;
+      if (src) src.setData(data);
+      else m.addSource(id, { type: "geojson", data });
+    }
+    if (!m.getLayer("rings")) {
+      const below = m.getLayer("links") ? "links" : undefined;
+      m.addLayer({ id: "rings", type: "line", source: "rings", paint: {} }, below);
+      m.addLayer({ id: "ringlabels", type: "symbol", source: "ringlabels", layout: { "text-field": ["get", "text"], "text-font": ["Noto Sans Regular"], "text-size": ["case", ["==", ["get", "kind"], "cardinal"], 13, 11], "text-anchor": "center", "text-allow-overlap": true, "text-ignore-placement": true } });
+    }
+    m.setPaintProperty("rings", "line-color", t.ui.accent);
+    m.setPaintProperty("rings", "line-opacity", ["case", ["==", ["get", "kind"], "spoke"], 0.2, 0.6]);
+    m.setPaintProperty("rings", "line-width", ["case", ["==", ["get", "kind"], "spoke"], 1, 1.4]);
+    m.setPaintProperty("ringlabels", "text-color", ["case", ["==", ["get", "kind"], "cardinal"], t.ui.accent, t.map.label]);
+    m.setPaintProperty("ringlabels", "text-halo-color", t.map.halo);
+    m.setPaintProperty("ringlabels", "text-halo-width", 1.5);
+  }
+  useEffect(() => {
+    saveRings(rings);
+    if (ready && map.current) drawRings(map.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rings, home?.[0], home?.[1], ready]);
 
   useEffect(() => {
     if (ready && map.current) drawStatic(map.current);
@@ -252,6 +345,14 @@ export default function LiveMap() {
         onReady={(m) => {
           map.current = m;
           drawStatic(m);
+          let queued = 0;
+          m.on("move", () => {
+            if (!ringState.current.on || queued) return;
+            queued = requestAnimationFrame(() => {
+              queued = 0;
+              drawRings(m);
+            });
+          });
           setReady(true);
         }}
       />
@@ -261,7 +362,12 @@ export default function LiveMap() {
         <span><span className="dot" style={{ background: nodeColor("companion") }} />Companion</span>
         <span><span className="dot" style={{ border: "2px solid var(--accent)", width: 12, height: 12 }} />Your repeater</span>
         <span><span className="dot" style={{ border: "2px solid var(--bad)", width: 12, height: 12 }} />Yours, quiet</span>
+        <span><span className="dot" style={{ background: "var(--text-3)", opacity: 0.35 }} />Faded: stale{info?.stale_after_hours ? ` (not heard in ${duration(info.stale_after_hours * 3600)})` : ""}</span>
         <span className="faint">Dashed lines: links (colour = SNR)</span>
+        <button type="button" className="small-btn" aria-pressed={rings} onClick={() => setRings((r) => !r)} style={{ marginTop: 4, alignSelf: "flex-start" }}>
+          {rings ? "Hide range rings" : "Show range rings"}
+        </button>
+        {rings && !home && <span className="small" role="status" style={{ color: "var(--warn)", maxWidth: 200 }}>The station radio's position isn't known, so range rings can't be drawn. Set a position on the radio.</span>}
       </div>
       <div className="overlay feed" aria-live="polite">
         <div className="row" style={{ marginBottom: 6 }}>

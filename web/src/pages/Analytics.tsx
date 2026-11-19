@@ -1,5 +1,6 @@
 import { Fragment, useMemo } from "react";
 import { Node, TYPE_LABEL, makeResolver, useApi } from "../api";
+import { IgnoreButton } from "../components/NodeTags";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -7,7 +8,7 @@ export default function Analytics() {
   const tz = -new Date().getTimezoneOffset();
   const { data: ov } = useApi<any>("/api/overview", 30000);
   const { data: heat } = useApi<number[][]>(`/api/analytics/heatmap?tz=${tz}`, 300000);
-  const { data: top } = useApi<any>("/api/analytics/top", 60000);
+  const { data: top, reload: reloadTop } = useApi<any>("/api/analytics/top", 60000);
   const { data: prefixes } = useApi<any[]>("/api/analytics/prefixes", 120000);
   const { data: nodes } = useApi<Node[]>("/api/nodes", 120000);
   const resolve = useMemo(() => makeResolver(nodes || []), [nodes]);
@@ -70,10 +71,10 @@ export default function Analytics() {
         <div className="card">
           <h2>Most adverts, last 24 h</h2>
           <table>
-            <thead><tr><th>Node</th><th>Type</th><th>Adverts</th></tr></thead>
+            <thead><tr><th>Node</th><th>Type</th><th>Adverts</th><th /></tr></thead>
             <tbody>
               {(top?.adverts || []).map((a: any) => (
-                <tr key={a.public_key}><td>{a.name || a.public_key.slice(0, 8)}</td><td>{a.node_type}</td><td>{a.adverts}</td></tr>
+                <tr key={a.public_key}><td>{a.name || a.public_key.slice(0, 8)}</td><td>{a.node_type}</td><td>{a.adverts}</td><td><IgnoreButton small publicKey={a.public_key} name={a.name} onChange={reloadTop} /></td></tr>
               ))}
             </tbody>
           </table>

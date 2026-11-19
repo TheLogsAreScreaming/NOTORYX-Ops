@@ -3,6 +3,7 @@ import { useApi, useConnected } from "./api";
 import { LookButton } from "./components/ThemePicker";
 import LiveMap from "./pages/LiveMap";
 import Packets from "./pages/Packets";
+import Nodes from "./pages/Nodes";
 import Channels from "./pages/Channels";
 import Fleet from "./pages/Fleet";
 import Observers from "./pages/Observers";
@@ -15,6 +16,7 @@ import Settings from "./pages/Settings";
 const NAV: [string, string][] = [
   ["/", "Live map"],
   ["/packets", "Packets"],
+  ["/nodes", "Nodes"],
   ["/channels", "Channels"],
   ["/fleet", "My fleet"],
   ["/observers", "Observers"],
@@ -59,6 +61,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<LiveMap />} />
           <Route path="/packets" element={<Packets />} />
+          <Route path="/nodes" element={<Nodes />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/observers" element={<Observers />} />

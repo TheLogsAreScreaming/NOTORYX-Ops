@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Packet, TYPE_LABEL, TYPE_PILL, api, clock, useApi, useLive } from "../api";
+import { IgnoreButton } from "../components/NodeTags";
 
 const TYPES = ["", "advert", "group_text", "text", "request", "response", "anon_request", "ack", "path", "trace"];
 
@@ -19,6 +20,7 @@ function HexDump({ hex }: { hex: string }) {
 
 function Detail({ hash, onClose }: { hash: string; onClose: () => void }) {
   const { data, error } = useApi<any>(`/api/packets/${hash}`);
+  const [ignoredMsg, setIgnoredMsg] = useState<string | null>(null);
   return (
     <aside className="drawer" aria-label="Packet detail">
       <div className="row" style={{ marginBottom: 10 }}>
@@ -58,6 +60,12 @@ function Detail({ hash, onClose }: { hash: string; onClose: () => void }) {
                 ))}
             </tbody>
           </table>
+          {data.decoded.advert?.public_key && (
+            <div className="row small">
+              <IgnoreButton small publicKey={data.decoded.advert.public_key} name={data.decoded.advert.name} onChange={(on) => setIgnoredMsg(on ? "Ignored. Its packets are hidden from now on." : "Shown again.")} />
+              {ignoredMsg && <span className="muted">{ignoredMsg}</span>}
+            </div>
+          )}
           <h3 style={{ margin: "8px 0 0", fontSize: 14 }}>Heard {data.receptions.length} times</h3>
           <table>
             <thead>

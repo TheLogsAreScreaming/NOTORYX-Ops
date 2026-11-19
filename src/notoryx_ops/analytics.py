@@ -1,4 +1,7 @@
-"""Network analytics: overview numbers, activity heatmap, prefix use, links and coverage."""
+"""Network analytics: overview numbers, activity heatmap, prefix use, links and coverage.
+
+Nodes on the ignore list are left out of every view here.
+"""
 
 from __future__ import annotations
 
@@ -8,7 +11,10 @@ import time
 from collections import Counter, defaultdict
 from typing import Any
 
-from .store import Store
+from .store import NODE_NOT_IGNORED, PKT_NOT_IGNORED, Store
+
+PKT = PKT_NOT_IGNORED
+NODE = NODE_NOT_IGNORED
 
 EARTH_M = 6371000.0
 
@@ -17,12 +23,13 @@ def overview(store: Store, now: float | None = None) -> dict[str, Any]:
     now = now or time.time()
     day = now - 86400
     q1 = store.one
-    pk = q1("SELECT COUNT(*) n, COUNT(DISTINCT hash) u FROM packets WHERE received_at >= ?", (day,))
-    nodes = q1("SELECT COUNT(*) n FROM nodes WHERE last_seen >= ?", (day,))
-    reps = q1("SELECT COUNT(*) n FROM nodes WHERE last_seen >= ? AND node_type IN ('repeater','room')", (day,))
+    pk = q1(f"SELECT COUNT(*) n, COUNT(DISTINCT hash) u FROM packets WHERE received_at >= ? AND {PKT}", (day,))
+    nodes = q1(f"SELECT COUNT(*) n FROM nodes WHERE last_seen >= ? AND {NODE}", (day,))
+    reps = q1(f"SELECT COUNT(*) n FROM nodes WHERE last_seen >= ? AND node_type IN ('repeater','room') AND {NODE}", (day,))
     obs = q1("SELECT COUNT(*) n FROM observers WHERE last_seen >= ?", (now - 1800,))
-    types = store.q("SELECT ptype, COUNT(*) n FROM packets WHERE received_at >= ? GROUP BY ptype ORDER BY n DESC", (day,))
-    hour = q1("SELECT COUNT(DISTINCT hash) u FROM packets WHERE received_at >= ?", (now - 3600,))
+    types = store.q(f"SELECT ptype, COUNT(*) n FROM packets WHERE received_at >= ? AND {PKT}"
+                    " GROUP BY ptype ORDER BY n DESC", (day,))
+    hour = q1(f"SELECT COUNT(DISTINCT hash) u FROM packets WHERE received_at >= ? AND {PKT}", (now - 3600,))
     clashes = sum(1 for p in prefix_usage(store, now) if p["repeaters"] > 1)
     return {
         "packets_24h": pk["n"], "unique_24h": pk["u"], "unique_1h": hour["u"],
@@ -35,7 +42,8 @@ def heatmap(store: Store, days: int = 7, now: float | None = None, tz_offset_min
     """Unique packets per weekday (0 = Monday) and hour, in the viewer's time zone."""
     now = now or time.time()
     grid = [[0] * 24 for _ in range(7)]
-    rows = store.q("SELECT MIN(received_at) t FROM packets WHERE received_at >= ? GROUP BY hash", (now - days * 86400,))
+    rows = store.q(f"SELECT MIN(received_at) t FROM packets WHERE received_at >= ? AND {PKT} GROUP BY hash",
+                   (now - days * 86400,))
     for r in rows:
         t = r["t"] - tz_offset_min * 60
         tm = time.gmtime(t)
@@ -48,7 +56,7 @@ def top_nodes(store: Store, hours: int = 24, limit: int = 15, now: float | None 
     since = now - hours * 3600
     rows = store.q(
         "SELECT p.node_key key, COUNT(DISTINCT p.hash) n FROM packets p WHERE p.received_at >= ? AND p.node_key IS NOT NULL"
-        " GROUP BY p.node_key ORDER BY n DESC LIMIT ?", (since, limit))
+        f" AND {PKT} GROUP BY p.node_key ORDER BY n DESC LIMIT ?", (since, limit))
     names = {r["public_key"]: r for r in store.q("SELECT public_key, name, node_type FROM nodes")}
     senders = Counter()
     for r in store.q("SELECT src_hash, hash FROM packets WHERE received_at >= ? AND src_hash IS NOT NULL GROUP BY hash", (since,)):
@@ -67,10 +75,11 @@ def observer_stats(store: Store, now: float | None = None) -> list[dict[str, Any
     out = []
     for o in store.q("SELECT * FROM observers ORDER BY last_seen DESC"):
         s = store.one(
-            "SELECT COUNT(*) n, AVG(snr) snr, AVG(rssi) rssi FROM packets WHERE observer = ? AND received_at >= ?",
+            f"SELECT COUNT(*) n, AVG(snr) snr, AVG(rssi) rssi FROM packets WHERE observer = ? AND received_at >= ? AND {PKT}",
             (o["name"], now - 86400))
         hourly = [0] * 24
-        for r in store.q("SELECT received_at FROM packets WHERE observer = ? AND received_at >= ?", (o["name"], now - 86400)):
+        for r in store.q(f"SELECT received_at FROM packets WHERE observer = ? AND received_at >= ? AND {PKT}",
+                         (o["name"], now - 86400)):
             hourly[min(23, int((now - r["received_at"]) // 3600))] += 1
         out.append({**o, "packets_24h": s["n"], "avg_snr": s["snr"], "avg_rssi": s["rssi"],
                     "hourly": list(reversed(hourly)), "live": now - o["last_seen"] < 1800})
@@ -82,7 +91,8 @@ def prefix_usage(store: Store, now: float | None = None, days: int = 7) -> list[
     now = now or time.time()
     use: dict[str, dict[str, Any]] = {f"{i:02x}": {"prefix": f"{i:02x}", "repeaters": 0, "others": 0, "names": []}
                                       for i in range(256)}
-    for n in store.q("SELECT prefix, name, node_type, public_key FROM nodes WHERE last_seen >= ?", (now - days * 86400,)):
+    for n in store.q(f"SELECT prefix, name, node_type, public_key FROM nodes WHERE last_seen >= ? AND {NODE}",
+                     (now - days * 86400,)):
         u = use[n["prefix"][:2].lower()]
         if n["node_type"] in ("repeater", "room"):
             u["repeaters"] += 1
@@ -112,8 +122,11 @@ def links(store: Store, hours: int = 24, now: float | None = None) -> list[dict[
         by_prefix[n["prefix"][:2].lower()].append(n)
     pairs: dict[tuple[str, str], dict[str, Any]] = {}
 
+    # Hops are resolved against every node, so hiding one never makes another look like the only match.
+    hidden = store.ignored_keys()
+
     def add(a: dict, b: dict, snr: float | None, source: str) -> None:
-        if a["public_key"] == b["public_key"]:
+        if a["public_key"] == b["public_key"] or a["public_key"] in hidden or b["public_key"] in hidden:
             return
         k = tuple(sorted((a["public_key"], b["public_key"])))
         e = pairs.setdefault(k, {"a": k[0], "b": k[1], "count": 0, "snr": None, "source": source})
@@ -190,7 +203,8 @@ def coverage(store: Store, size_m: float = 1500, days: int = 30, now: float | No
     now = now or time.time()
     rows = store.q(
         "SELECT n.lat, n.lon, p.snr, p.observer FROM packets p JOIN nodes n ON n.public_key = p.node_key"
-        " WHERE p.ptype = 'advert' AND p.hops = 0 AND n.lat IS NOT NULL AND p.received_at >= ?",
+        " WHERE p.ptype = 'advert' AND p.hops = 0 AND n.lat IS NOT NULL AND p.received_at >= ?"
+        " AND n.public_key NOT IN (SELECT public_key FROM ignored_nodes)",
         (now - days * 86400,))
     if not rows:
         return {"type": "FeatureCollection", "features": [], "gaps": []}
@@ -220,7 +234,7 @@ def distance_m(a_lat, a_lon, b_lat, b_lon) -> float:
 def coverage_gaps(store: Store, now: float | None = None, far_km: float = 8) -> list[dict[str, Any]]:
     """Nodes with a position that are far from every known repeater: candidate spots for a new one."""
     now = now or time.time()
-    nodes = store.q("SELECT public_key, name, node_type, lat, lon FROM nodes WHERE lat IS NOT NULL AND last_seen >= ?",
+    nodes = store.q(f"SELECT public_key, name, node_type, lat, lon FROM nodes WHERE lat IS NOT NULL AND last_seen >= ? AND {NODE}",
                     (now - 30 * 86400,))
     reps = [n for n in nodes if n["node_type"] in ("repeater", "room")]
     out = []

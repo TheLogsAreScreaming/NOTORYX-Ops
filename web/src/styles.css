@@ -239,3 +239,16 @@ tr.sel td { background: var(--accent-bg); }
 .ok-note { border-color: var(--ok); color: var(--ok); background: var(--ok-bg); }
 .err-note { border-color: var(--bad); color: var(--bad); background: var(--bad-bg); }
 textarea { width: 100%; resize: vertical; }
+
+/* Stale nodes and the ignore list */
+.pill.stale { background: var(--panel-2); color: var(--text-2); border: 1px dashed var(--line-strong); display: inline-flex; align-items: center; gap: 4px; }
+tr.is-stale td:first-child { opacity: 0.75; }
+button.small-btn { font-size: 12px; padding: 2px 8px; }
+.maptools { left: 12px; bottom: 64px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; max-width: 260px; }
+.maplibregl-popup-content .popup-actions { margin-top: 6px; }
+.maplibregl-popup-content { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--panel); }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--panel); }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--panel); }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--panel); }
+.maplibregl-popup-close-button { color: var(--text-2); }

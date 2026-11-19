@@ -4,7 +4,7 @@ Network dashboard and infrastructure station for MeshCore.
 
 NOTORYX Ops runs on a Raspberry Pi, a Mac or in Docker, next to a MeshCore companion radio. It has two sides:
 
-- **Analyzer:** decodes every packet heard by the station radio and by observers on MQTT brokers. It shows a live route map with a 24-hour replay, a packet feed with a decoder, channel messages, observer health, coverage hexes and analytics, including a one-byte prefix collision grid.
+- **Analyzer:** decodes every packet heard by the station radio and by observers on MQTT brokers. It shows a live route map with a 24-hour replay and range rings, a node list that marks stale nodes and lets you ignore noisy ones, a packet feed with a decoder, channel messages, observer health, coverage hexes and analytics, including a one-byte prefix collision grid.
 - **Fleet:** logs in to the repeaters you own and keeps their health over time: battery, noise floor, airtime, uptime, neighbours and firmware. It raises alerts when a repeater goes quiet, its battery is low or falling, its firmware is behind, or two repeaters share a prefix, and sends them to Discord or a webhook. Bulk settings change one setting on several repeaters after showing the current values.
 
 Status: first test version, **not yet tested with a real radio**. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).

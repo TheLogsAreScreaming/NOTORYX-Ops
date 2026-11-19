@@ -10,7 +10,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# SQL conditions that leave out nodes on the ignore list. A packet without a node key
+# (anything but an advert) can't be tied to one node, so it always stays.
+PKT_NOT_IGNORED = "(node_key IS NULL OR node_key NOT IN (SELECT public_key FROM ignored_nodes))"
+NODE_NOT_IGNORED = "public_key NOT IN (SELECT public_key FROM ignored_nodes)"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
@@ -123,6 +128,13 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 CREATE INDEX IF NOT EXISTS alerts_open ON alerts(kind, subject, resolved_at);
 
+-- Since schema 2: nodes hidden from the map, lists, analytics and alerts. Their packets are still stored.
+CREATE TABLE IF NOT EXISTS ignored_nodes (
+  public_key TEXT PRIMARY KEY,
+  name TEXT,
+  added_at REAL NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit (
   id INTEGER PRIMARY KEY,
   at REAL NOT NULL,
@@ -143,9 +155,8 @@ class Store:
         self.db.execute("PRAGMA foreign_keys=ON")
         self._add_missing_columns()
         self.db.executescript(SCHEMA)
-        self.db.execute(
-            "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)", (str(SCHEMA_VERSION),)
-        )
+        self._migrate()
+        self._ignored = {r["public_key"] for r in self.q("SELECT public_key FROM ignored_nodes")}
         if new and self.path != ":memory:":
             os.chmod(self.path, 0o600)
 
@@ -157,6 +168,23 @@ class Store:
             if "last_advert" not in cols:
                 self.db.execute("ALTER TABLE nodes ADD COLUMN last_advert REAL")
                 self.db.execute("UPDATE nodes SET last_advert = last_seen")
+
+    def _migrate(self) -> None:
+        """Record the schema version. Each step brings a database up from the version before it.
+
+        1 -> 2: the ignored_nodes table, which the schema script above already created.
+        """
+        row = self.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+        have = int(row[0]) if row else 0
+        if have < SCHEMA_VERSION:
+            self.db.execute(
+                "INSERT INTO meta(key, value) VALUES ('schema_version', ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(SCHEMA_VERSION),)
+            )
+
+    def schema_version(self) -> int:
+        r = self.one("SELECT value FROM meta WHERE key = 'schema_version'")
+        return int(r["value"]) if r else 0
 
     # ---- helpers -------------------------------------------------------
     def q(self, sql: str, args: tuple | list = ()) -> list[dict[str, Any]]:
@@ -193,8 +221,11 @@ class Store:
         return r["n"] if r else 0
 
     def recent_packets(self, limit=200, before: float | None = None, ptype: str | None = None,
-                       observer: str | None = None, since: float | None = None) -> list[dict[str, Any]]:
+                       observer: str | None = None, since: float | None = None,
+                       hide_ignored: bool = True) -> list[dict[str, Any]]:
         where, args = [], []
+        if hide_ignored:
+            where.append(PKT_NOT_IGNORED)
         if before:
             where.append("received_at < ?")
             args.append(before)
@@ -259,11 +290,48 @@ class Store:
         if len(rows) == 1:
             self.x("UPDATE nodes SET last_seen = MAX(last_seen, ?) WHERE public_key = ?", (now, rows[0]["public_key"]))
 
-    def nodes(self) -> list[dict[str, Any]]:
-        rows = self.q("SELECT * FROM nodes ORDER BY last_seen DESC")
+    def nodes(self, include_ignored: bool = False) -> list[dict[str, Any]]:
+        where = "" if include_ignored else f" WHERE {NODE_NOT_IGNORED}"
+        rows = self.q(f"SELECT * FROM nodes{where} ORDER BY last_seen DESC")
         for r in rows:
             r["direct_observers"] = json.loads(r["direct_observers"])
         return rows
+
+    # ---- ignore list ---------------------------------------------------
+    def ignored(self) -> list[dict[str, Any]]:
+        """Ignored nodes, with the latest name heard for each (or the one saved when it was ignored)."""
+        return self.q(
+            "SELECT i.public_key, COALESCE(n.name, i.name) AS name, n.node_type, n.last_seen, i.added_at"
+            " FROM ignored_nodes i LEFT JOIN nodes n ON n.public_key = i.public_key ORDER BY i.added_at DESC"
+        )
+
+    def ignored_keys(self) -> frozenset[str]:
+        with self._lock:
+            return frozenset(self._ignored)
+
+    def is_ignored(self, public_key: str | None) -> bool:
+        return bool(public_key) and public_key in self._ignored
+
+    def ignore(self, public_key: str, name: str | None = None) -> bool:
+        """Add a node to the ignore list. Returns False when it was already there."""
+        key = public_key.lower()
+        if name is None:
+            n = self.one("SELECT name FROM nodes WHERE public_key = ?", (key,))
+            name = (n or {}).get("name")
+        with self._lock:
+            added = self.db.execute(
+                "INSERT OR IGNORE INTO ignored_nodes(public_key, name, added_at) VALUES (?,?,?)",
+                (key, name, time.time()),
+            ).rowcount > 0
+            self._ignored.add(key)
+        return added
+
+    def unignore(self, public_key: str) -> bool:
+        key = public_key.lower()
+        with self._lock:
+            gone = self.db.execute("DELETE FROM ignored_nodes WHERE public_key = ?", (key,)).rowcount > 0
+            self._ignored.discard(key)
+        return gone
 
     # ---- observers -----------------------------------------------------
     def touch_observer(self, name: str, source: str, now: float, public_key: str | None = None) -> None:
