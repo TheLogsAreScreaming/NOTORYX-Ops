@@ -80,6 +80,39 @@ class UserPatch(BaseModel):
     disabled: bool | None = None
 
 
+class ReportIn(BaseModel):
+    kind: str
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    note: str = Field(default="", max_length=200)
+    send: bool = True
+    channel: str = Field(default="Public", max_length=60)
+
+
+class ClearIn(BaseModel):
+    send: bool = True
+    channel: str = Field(default="Public", max_length=60)
+
+
+class TeamIn(BaseModel):
+    name: str = Field(min_length=2, max_length=24)
+    notes: str = Field(default="", max_length=200)
+    add_to_radio: bool = False
+
+
+class MembersIn(BaseModel):
+    members: list[dict[str, Any]] = Field(default_factory=list, max_length=50)
+
+
+class SurveysIn(BaseModel):
+    points: list[dict[str, Any]] = Field(max_length=5000)
+
+
+class ImportIn(BaseModel):
+    format: str = Field(pattern="^(csv|gpx)$")
+    text: str = Field(max_length=5_000_000)
+
+
 class DecodeIn(BaseModel):
     raw: str = Field(max_length=1200)
 
@@ -385,6 +418,128 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             raise HTTPException(503, f"PostgreSQL copy failed: {str(exc).splitlines()[0][:300]}") from exc
         st.pg.copied += n
         return {"copied": n}
+
+    # ---- field work ---------------------------------------------------------------
+    from . import field as fieldmod
+
+    @app.get("/api/field/kinds")
+    def field_kinds():
+        return fieldmod.KINDS
+
+    @app.get("/api/field/reports")
+    def field_reports(hours: float = 24):
+        return st.field.reports(max(0, min(hours, 24 * 30)))
+
+    @app.get("/api/export/reports.geojson")
+    def export_reports(hours: float = 24):
+        return download(json.dumps(fieldmod.reports_geojson(st.field.reports(max(0, min(hours, 24 * 30))))),
+                        "notoryx-ops-reports.geojson", "application/geo+json")
+
+    def who(request: Request) -> str:
+        p = auth.principal(request)
+        return p["username"] if p else "station"
+
+    @app.post("/api/field/reports", dependencies=[Depends(operator)])
+    async def field_report_add(body: ReportIn, request: Request):
+        text = fieldmod.format_report(body.kind, body.lat, body.lon, body.note)
+        note = " ".join(body.note.split())
+        ch = st.channel(body.channel) if body.send else None
+        # Save before sending, so an echo heard back from a repeater is recognised as ours.
+        rid = st.field.add_report(body.kind, round(body.lat, 5), round(body.lon, 5), note, "station", who(request),
+                                  body.channel if body.send else None, sent=False)
+        if ch:
+            try:
+                await st.radio.send_channel(ch.key, text)
+            except Exception:
+                st.store.x("DELETE FROM reports WHERE id = ?", (rid,))
+                raise
+            st.store.x("UPDATE reports SET sent = 1 WHERE id = ?", (rid,))
+        st.store.audit("report_add", {"id": rid, "kind": body.kind, "sent": body.send, "by": who(request)})
+        return {"id": rid, "text": text if body.send else None}
+
+    @app.post("/api/field/reports/{rid}/clear", dependencies=[Depends(operator)])
+    async def field_report_clear(rid: int, body: ClearIn, request: Request):
+        r = st.store.one("SELECT * FROM reports WHERE id = ? AND cleared_at IS NULL", (rid,))
+        if not r:
+            raise HTTPException(404, "That report is already cleared or doesn't exist.")
+        ch = st.channel(body.channel) if body.send else None
+        st.field.clear_report(rid, who(request))  # first, so our own echo finds nothing left to clear
+        if ch:
+            try:
+                await st.radio.send_channel(ch.key, fieldmod.format_report(r["kind"], r["lat"], r["lon"], clear=True))
+            except Exception:
+                st.store.x("UPDATE reports SET cleared_at = NULL, cleared_by = NULL WHERE id = ?", (rid,))
+                raise
+        st.store.audit("report_clear", {"id": rid, "sent": body.send, "by": who(request)})
+        return {"ok": True}
+
+    @app.get("/api/field/teams")
+    def field_teams(request: Request):
+        p = auth.principal(request)
+        show_keys = (p and RANK[p["role"]] >= RANK["operator"]) or (not auth.accounts_on() and (not cfg.admin_token and is_local(request)))
+        teams = st.field.teams()
+        if not show_keys:
+            for t in teams:
+                t["channel_key"] = None
+        return teams
+
+    @app.post("/api/field/teams", dependencies=[Depends(operator)])
+    async def field_team_add(body: TeamIn):
+        t = st.field.add_team(body.name, body.notes)
+        await st.apply_settings({"channels": [*cfg.channel_keys, f"{t['channel']}={t['channel_key']}"]})
+        slot = None
+        if body.add_to_radio:
+            slot = await st.radio.add_channel(t["channel"], bytes.fromhex(t["channel_key"]))
+        st.store.audit("team_add", {"team": t["name"], "radio_slot": slot})
+        return {**t, "radio_slot": slot}
+
+    @app.post("/api/field/teams/{tid}/radio", dependencies=[Depends(operator)])
+    async def field_team_radio(tid: int):
+        t = st.store.one("SELECT * FROM teams WHERE id = ?", (tid,))
+        if not t:
+            raise HTTPException(404, "No such team.")
+        slot = await st.radio.add_channel(fieldmod.team_channel_name(t["name"]), bytes.fromhex(t["channel_key"]))
+        return {"radio_slot": slot}
+
+    @app.put("/api/field/teams/{tid}/members", dependencies=[Depends(operator)])
+    def field_team_members(tid: int, body: MembersIn):
+        st.field.set_members(tid, body.members)
+        return {"ok": True}
+
+    @app.delete("/api/field/teams/{tid}", dependencies=[Depends(operator)])
+    async def field_team_remove(tid: int):
+        t = st.field.remove_team(tid)
+        if not t:
+            raise HTTPException(404, "No such team.")
+        spec = f"{fieldmod.team_channel_name(t['name'])}={t['channel_key']}"
+        if spec in cfg.channel_keys:
+            await st.apply_settings({"channels": [c for c in cfg.channel_keys if c != spec]})
+        st.store.audit("team_remove", {"team": t["name"]})
+        return {"ok": True, "note": "The channel stays on any radio it was added to; remove it there if you no longer need it."}
+
+    @app.get("/api/field/tracks")
+    def field_tracks(hours: float = 12, team_id: int | None = None):
+        return st.field.tracks(max(0.5, min(hours, 24 * 7)), team_id)
+
+    @app.get("/api/field/surveys")
+    def field_surveys(days: int = 30):
+        return st.field.surveys(max(1, min(days, 365)))
+
+    @app.post("/api/field/surveys")
+    def field_surveys_add(body: SurveysIn, request: Request):
+        # Field crews may only have viewer accounts, so anyone who may look may add survey points.
+        auth.require(request, "viewer")
+        res = st.field.add_surveys(body.points, who(request))
+        return res
+
+    @app.post("/api/field/surveys/import", dependencies=[Depends(operator)])
+    def field_surveys_import(body: ImportIn, request: Request):
+        pts = fieldmod.parse_survey_csv(body.text) if body.format == "csv" else fieldmod.parse_survey_gpx(body.text)
+        if not pts:
+            raise HTTPException(400, "No points with a position found in that file.")
+        res = st.field.add_surveys(pts, who(request))
+        st.store.audit("survey_import", {"format": body.format, **res})
+        return res
 
     # ---- terrain planning -----------------------------------------------------
     app.include_router(planning.router(st.planner))
