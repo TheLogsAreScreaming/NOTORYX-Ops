@@ -37,7 +37,7 @@ export default function Field() {
   const [busy, setBusy] = useState(false);
 
   const [teamName, setTeamName] = useState("");
-  const [toRadio, setToRadio] = useState(true);
+  const [toRadio, setToRadio] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
