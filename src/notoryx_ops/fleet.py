@@ -141,6 +141,8 @@ class Fleet:
                     await self.poll_round()
                 self.alerts.evaluate()
                 self.store.prune(self.cfg.packet_retention_days, self.cfg.fleet_history_days)
+                if getattr(self, "field", None):
+                    self.field.prune(self.cfg.packet_retention_days)
             except Exception:  # noqa: BLE001
                 log.exception("fleet round failed")
             self.next_round = time.time() + self.cfg.poll_minutes * 60

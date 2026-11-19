@@ -127,6 +127,7 @@ export default function Coverage() {
   const [days, setDays] = useState(30);
   const { data, error } = useApi<any>(mode === "measured" ? `/api/coverage?size_m=${size}&days=${days}` : null);
   const { data: status, reload: reloadStatus } = useApi<any>("/api/terrain/status");
+  const { data: surveys } = useApi<any[]>(mode === "measured" ? `/api/field/surveys?days=${days}` : null);
   const { data: nodes } = useApi<Node[]>("/api/nodes");
   const placed = useMemo(() => (nodes || []).filter((n) => n.lat != null && n.lon != null), [nodes]);
 
@@ -296,10 +297,18 @@ export default function Coverage() {
       setSrc(m, "hexes", empty);
       setSrc(m, "gaps", empty);
     }
+    setSrc(m, "surveys", mode === "measured" && surveys ? {
+      type: "FeatureCollection",
+      features: surveys.map((p: any) => ({
+        type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+        properties: { color: p.heard === 0 ? t.ui.bad : p.snr != null ? snrColor(p.snr) : t.ui.ok, ring: p.heard === 0 ? t.ui.bad : t.ui.bg },
+      })),
+    } : empty);
     if (!m.getLayer("hexes")) {
       m.addLayer({ id: "hexes", type: "fill", source: "hexes", paint: { "fill-color": ["get", "color"], "fill-opacity": 0.45 } });
       m.addLayer({ id: "hex-lines", type: "line", source: "hexes", paint: { "line-color": ["get", "color"], "line-width": 1 } });
       m.addLayer({ id: "gaps", type: "circle", source: "gaps", paint: { "circle-radius": 7, "circle-color": "rgba(0,0,0,0)", "circle-stroke-width": 2.5 } });
+      m.addLayer({ id: "surveys", type: "circle", source: "surveys", paint: { "circle-radius": 4.5, "circle-color": ["get", "color"], "circle-stroke-width": 1, "circle-stroke-color": ["get", "ring"] } });
     }
     m.setPaintProperty("gaps", "circle-stroke-color", t.ui.accent2);
 
@@ -351,7 +360,7 @@ export default function Coverage() {
   useEffect(() => {
     if (ready && map.current) draw(map.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, ready, mode, cov, prof, a, b, site, plan, newSites, sugg, highs, existing, look, placed]);
+  }, [data, ready, mode, cov, prof, a, b, site, plan, newSites, sugg, highs, existing, look, placed, surveys]);
 
   function onReady(m: MlMap) {
     map.current = m;
@@ -411,7 +420,7 @@ export default function Coverage() {
                 <span key={l as string}><span className="dot" style={{ background: snrColor(v as number) }} />{l}</span>
               ))}
             </div>
-            {data && <div className="small faint" style={{ marginTop: 6 }}>{data.features.length} hexes · {data.gaps.length} far-out nodes</div>}
+            {data && <div className="small faint" style={{ marginTop: 6 }}>{data.features.length} hexes · {data.gaps.length} far-out nodes{surveys?.length ? ` · ${surveys.length} survey points (small dots; red = nothing heard)` : ""}</div>}
             {error && <div className="err">{error}</div>}
             {data && data.features.length === 0 && <div className="small muted">No positioned nodes heard directly yet.</div>}
           </>

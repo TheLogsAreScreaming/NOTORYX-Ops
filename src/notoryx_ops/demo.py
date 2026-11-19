@@ -169,6 +169,42 @@ class DemoRadio:
         return [{"pubkey": n["key"][:4].hex(), "secs_ago": random.randint(30, 3000),
                  "snr": random.randint(-40, 40) / 4} for n in random.sample(others, 3)]
 
+    # ---- channels: a pretend radio with 8 slots; sent messages come back as if heard -----
+    _slots: list[dict[str, Any]] | None = None
+
+    async def channel_slots(self) -> list[dict[str, Any]]:
+        if self._slots is None:
+            self._slots = [{"idx": 0, "name": "Public", "key": PUBLIC_CHANNEL_KEY.hex()},
+                           {"idx": 1, "name": "#testing", "key": hashtag_key("#testing").hex()}]
+            self._slots += [{"idx": i, "name": "", "key": "00" * 16} for i in range(2, 8)]
+        return self._slots
+
+    async def find_slot(self, key: bytes) -> int | None:
+        return next((s["idx"] for s in await self.channel_slots() if s["key"] == key.hex()), None)
+
+    async def add_channel(self, name: str, key: bytes) -> int:
+        from .radio import RadioError
+
+        slots = await self.channel_slots()
+        found = await self.find_slot(key)
+        if found is not None:
+            return found
+        free = next((s for s in slots if not s["name"]), None)
+        if free is None:
+            raise RadioError("Every channel slot on the station radio is in use.")
+        free.update(name=name[:31], key=key.hex())
+        return free["idx"]
+
+    async def send_channel(self, key: bytes, text: str) -> int:
+        from .radio import RadioError
+
+        idx = await self.find_slot(key)
+        if idx is None:
+            raise RadioError("That channel isn't set up on the station radio.")
+        payload = encrypt_group_text(key, int(time.time()), "Demo station", text)
+        self.net.emit(decoder.encode_packet(1, 0x05, self.net._path(1), payload))
+        return idx
+
     async def command(self, key: str, cmd: str, timeout: float = 15) -> str:
         self._check(key)
         if cmd == "ver":

@@ -180,3 +180,54 @@ class RadioLink:
         if ev is None:
             raise RadioError(f"No reply to '{cmd}'.")
         return (ev.payload or {}).get("text", "").strip()
+
+    # ---- channels -----------------------------------------------------------
+    async def channel_slots(self) -> list[dict[str, Any]]:
+        """The radio's channel slots: index, name and key (hex). Empty slots have an empty name."""
+        from meshcore import EventType
+
+        mc = self._require()
+        out = []
+        for idx in range(int(self.self_info.get("max_channels") or 8)):
+            ev = await mc.commands.get_channel(idx)
+            if ev is None or ev.type == EventType.ERROR:
+                break
+            p = ev.payload or {}
+            sec = p.get("channel_secret") or b""
+            out.append({"idx": idx, "name": p.get("channel_name") or "",
+                        "key": sec.hex() if isinstance(sec, bytes | bytearray) else str(sec)})
+        return out
+
+    async def find_slot(self, key: bytes) -> int | None:
+        for s in await self.channel_slots():
+            if s["key"] == key.hex():
+                return s["idx"]
+        return None
+
+    async def add_channel(self, name: str, key: bytes) -> int:
+        """Put a channel in the first empty slot on the radio. Returns the slot."""
+        from meshcore import EventType
+
+        slots = await self.channel_slots()
+        for s in slots:
+            if s["key"] == key.hex():
+                return s["idx"]
+        free = [s["idx"] for s in slots if not s["name"] and s["key"].strip("0") == ""]
+        if not free:
+            raise RadioError("Every channel slot on the station radio is in use. Free one in your MeshCore app first.")
+        ev = await self._require().commands.set_channel(free[0], name[:31], key)
+        if ev is None or ev.type == EventType.ERROR:
+            raise RadioError("The radio refused the new channel.")
+        return free[0]
+
+    async def send_channel(self, key: bytes, text: str) -> int:
+        """Send a message on the channel with this key. Returns the slot used."""
+        from meshcore import EventType
+
+        idx = await self.find_slot(key)
+        if idx is None:
+            raise RadioError("That channel isn't set up on the station radio. Add it there (or with Add to radio) first.")
+        ev = await self._require().commands.send_chan_msg(idx, text)
+        if ev is None or ev.type == EventType.ERROR:
+            raise RadioError("The radio didn't send the message.")
+        return idx

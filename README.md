@@ -6,6 +6,7 @@ NOTORYX Ops runs on a Raspberry Pi, a Mac or in Docker, next to a MeshCore compa
 
 - **Analyzer:** decodes every packet heard by the station radio and by observers on MQTT brokers. It shows a live route map with a 24-hour replay and range rings, a node list that marks stale nodes and lets you ignore noisy ones, a packet feed with a decoder, channel messages, observer health, coverage hexes and analytics, including a one-byte prefix collision grid.
 - **Terrain planning:** coverage maps worked out from real elevation (Copernicus DEM), link profiles with line of sight, Fresnel zone and a link budget, high-ground finder, and "what if" relay planning that shows the area a new relay would add. Predictions can be calibrated against the links the station has measured.
+- **Field work:** hazard reports (flooded road, fallen tree, power line down...) sent and received as plain channel messages any MeshCore app can read, teams on their own private channels with position tracks, and an offline survey mode for phones that saves each spot and uploads it when the station can be reached. CSV and GPX survey imports.
 - **Accounts and roles:** optional sign-in with viewer, operator and admin roles. The admin token keeps working for scripts.
 - **Integrations:** GeoJSON and GPX exports, Prometheus metrics at `/metrics`, a read-only public map at `/public` with rounded positions, Home Assistant sensors over MQTT discovery, and a PostgreSQL archive (`pip install "notoryx-ops[postgres]"`).
 - **Fleet:** logs in to the repeaters you own and keeps their health over time: battery, noise floor, airtime, uptime, neighbours and firmware. It raises alerts when a repeater goes quiet, its battery is low or falling, its firmware is behind, or two repeaters share a prefix, and sends them to Discord or a webhook. Bulk settings change one setting on several repeaters after showing the current values.
@@ -35,6 +36,7 @@ Demo mode fills the dashboard with made-up traffic and a pretend fleet. Nothing 
 | `src/notoryx_ops/analytics.py` | Overview, heatmap, prefixes, links, coverage |
 | `src/notoryx_ops/terrain.py` | Elevation tiles, radio path model, coverage, high points, relay planning |
 | `src/notoryx_ops/planning.py` | Terrain API and calibration from measured links |
+| `src/notoryx_ops/field.py` | Field reports, teams, position tracks, surveys |
 | `src/notoryx_ops/auth.py` | Accounts, roles and sign-in sessions |
 | `src/notoryx_ops/integrations.py` | Exports, metrics, public map, Home Assistant, PostgreSQL |
 | `src/notoryx_ops/server.py` | Web API and live updates |

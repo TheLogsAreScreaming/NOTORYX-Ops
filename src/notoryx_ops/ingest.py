@@ -62,6 +62,7 @@ class Ingest:
         self.channels = channels
         self.hub = hub
         self.counts = {"ok": 0, "bad": 0}
+        self.field = None  # set by the station: field reports and position tracks
 
     def handle(
         self,
@@ -116,6 +117,8 @@ class Ingest:
             self.store.upsert_node(
                 a.public_key, a.name, a.node_type, a.lat, a.lon, a.timestamp, now, snr if direct else None, direct
             )
+            if self.field and not self.store.is_ignored(a.public_key):
+                self.field.on_advert(a.public_key, a.lat, a.lon, now)
         elif pkt.src_hash:
             self.store.touch_prefix(pkt.src_hash, now)
         if pkt.payload_type != "trace":
@@ -125,6 +128,11 @@ class Ingest:
         if message is not None:
             fresh = self.store.add_message(pkt.packet_hash, now, message.channel, message.sender,
                                            message.text, message.timestamp, pkt.hops)
+            if fresh and self.field:
+                try:
+                    self.field.on_message(message.channel, message.sender, message.text, now)
+                except Exception:  # noqa: BLE001 - a bad report must never stop packet intake
+                    log.exception("couldn't read a field message")
             if fresh:
                 self.hub.publish({"type": "message", "channel": message.channel, "sender": message.sender,
                                   "text": message.text, "received_at": now, "hops": pkt.hops})

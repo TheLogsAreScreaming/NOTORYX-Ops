@@ -13,6 +13,8 @@ import Alerts from "./pages/Alerts";
 import Station from "./pages/Station";
 import Settings from "./pages/Settings";
 import Login from "./pages/Login";
+import Field from "./pages/Field";
+import Survey from "./pages/Survey";
 import PublicMap from "./pages/PublicMap";
 import { signOut, useMe } from "./auth";
 
@@ -24,6 +26,7 @@ const NAV: [string, string][] = [
   ["/fleet", "My fleet"],
   ["/observers", "Observers"],
   ["/coverage", "Coverage"],
+  ["/field", "Field work"],
   ["/analytics", "Analytics"],
   ["/alerts", "Alerts"],
   ["/station", "Station"],
@@ -34,6 +37,8 @@ export default function App() {
   const loc = useLocation();
   const me = useMe();
   if (loc.pathname === "/public") return <PublicMap />;
+  // Survey mode must open with no signal, when the station can't say who is signed in.
+  if (loc.pathname === "/survey") return me?.accounts_on && !me.user ? <Login publicMap={false} /> : <Survey />;
   if (!me) return <div className="empty" style={{ padding: 24 }}>Loading…</div>;
   if (me.accounts_on && !me.user) return <Login publicMap={me.public_map} />;
   return <Dashboard />;
@@ -85,6 +90,7 @@ function Dashboard() {
           <Route path="/fleet" element={<Fleet />} />
           <Route path="/observers" element={<Observers />} />
           <Route path="/coverage" element={<Coverage />} />
+          <Route path="/field" element={<Field />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/station" element={<Station />} />

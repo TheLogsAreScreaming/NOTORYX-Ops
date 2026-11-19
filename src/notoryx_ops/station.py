@@ -13,6 +13,7 @@ from .auth import Auth
 from .channels import parse_channel
 from .config import Config
 from .demo import DemoNetwork, DemoRadio
+from .field import Field
 from .fleet import Fleet
 from .ingest import Hub, Ingest
 from .integrations import HomeAssistant, PostgresArchive
@@ -37,11 +38,14 @@ class Station:
             except ValueError as exc:
                 log.warning("skipping channel: %s", exc)
         self.ingest = Ingest(self.store, self.channels, self.hub)
+        self.field = Field(self.store, self.hub)
+        self.ingest.field = self.field
         self.demo = DemoNetwork(self.ingest) if cfg.demo else None
         self.radio = DemoRadio(self.demo) if self.demo else RadioLink(cfg, self.ingest)
         self.mqtt = [MqttFeed(s, self.ingest) for s in cfg.mqtt]
         self.alerts = Alerts(cfg, self.store, self.hub)
         self.fleet = Fleet(cfg, self.store, self.radio, self.alerts, self.hub)
+        self.fleet.field = self.field
         self.planner = Planner(cfg, self.store, fetch=terrain_fetch)
         self.auth = Auth(cfg, self.store)
         self.ha = HomeAssistant(cfg, self.store, self)
@@ -55,6 +59,12 @@ class Station:
             for n in self.demo.fleet:
                 if not self.store.one("SELECT 1 x FROM repeaters WHERE public_key = ?", (n["key"].hex(),)):
                     self.fleet.add(n["key"].hex(), n["name"], "demo")
+            if not self.store.one("SELECT 1 x FROM reports LIMIT 1"):
+                from .demo import CENTER
+
+                now = time.time()
+                self.field.on_message("Public", "Demo Truck", f"⚑ tree {CENTER[0] + 0.031:.5f},{CENTER[1] - 0.042:.5f} Across both lanes", now - 2400)
+                self.field.on_message("Public", "Demo Hiker", f"⚑ flood {CENTER[0] - 0.024:.5f},{CENTER[1] + 0.018:.5f} Water over the bridge road", now - 900)
             self.demo.start()
         self.radio.start()
         for m in self.mqtt:
@@ -114,6 +124,13 @@ class Station:
             m.stop()
         self.ha.stop()
         self.pg.stop()
+
+    def channel(self, name: str):
+        """A configured channel by its name (as shown on the Channels page)."""
+        for c in self.channels:
+            if c.name.lower() == (name or "").lower():
+                return c
+        raise ValueError(f"The station doesn't have a channel called {name!r}. Add it under Settings → Channels.")
 
     def info(self) -> dict:
         return {
