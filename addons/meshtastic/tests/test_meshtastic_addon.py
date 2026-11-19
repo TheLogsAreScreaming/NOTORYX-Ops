@@ -256,3 +256,15 @@ def test_admin_needs_operator_when_accounts_on(tmp_path):
         assert c.get("/api/addons/meshtastic/nodes").status_code == 200
         assert c.get(f"/api/addons/meshtastic/nodes/{RELAY_A}/config/lora").status_code == 403
         assert c.put("/api/addons/meshtastic/settings", json={"bridge_enabled": True}).status_code == 403
+
+
+def test_switching_the_connection_on_from_the_page(tmp_path):
+    """Found on a real station: turning the radio on from the page failed with 'no running event loop'."""
+    _cfg, _fake, c = make(tmp_path, transport="none")
+    with c:
+        assert c.get("/api/addons/meshtastic/status").json()["radio"]["state"] == "off"
+        r = c.put("/api/addons/meshtastic/settings", json={"transport": "serial", "serial_port": "/dev/fake"})
+        assert r.status_code == 200
+        wait_connected(c)
+        assert c.put("/api/addons/meshtastic/settings", json={"transport": "none"}).status_code == 200
+        assert c.get("/api/addons/meshtastic/status").json()["radio"]["state"] == "off"
