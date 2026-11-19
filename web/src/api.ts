@@ -172,8 +172,18 @@ export function useConnected(): boolean {
   return v;
 }
 
+/** 2020-01-01 UTC. Earlier times (0 / the epoch included) come from a clock that was never set. */
+const MIN_KNOWN_TIME = 1577836800;
+
+/** t when it is a believable heard time, else null: unset, epoch, before 2020 or over a day ahead. */
+export function knownTime(t: number | null | undefined, now = Date.now() / 1000): number | null {
+  if (!t || t < MIN_KNOWN_TIME || t > now + 86400) return null;
+  return t;
+}
+
 export function ago(t: number | null | undefined, now = Date.now() / 1000): string {
   if (!t) return "never";
+  if (knownTime(t, now) == null) return "unknown";
   const s = Math.max(0, Math.round(now - t));
   if (s < 60) return `${s} s ago`;
   if (s < 3600) return `${Math.round(s / 60)} min ago`;

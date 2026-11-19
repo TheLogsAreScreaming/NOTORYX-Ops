@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { duration, ignoreNode, unignoreNode } from "../api";
+import { duration, ignoreNode, knownTime, unignoreNode } from "../api";
 
 /** "stale · 3 d" with a clock icon, so staleness never rests on colour alone. */
 export function StaleTag({ stale, lastHeard }: { stale?: boolean; lastHeard?: number | null }) {
-  if (!stale || !lastHeard) return null;
-  const age = duration(Date.now() / 1000 - lastHeard);
+  const heard = knownTime(lastHeard);
+  if (!stale || heard == null) return null;
+  const age = duration(Date.now() / 1000 - heard);
   return (
     <span className="pill stale" title={`Not heard for ${age}`}>
       <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true" focusable="false">

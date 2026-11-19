@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MlMap, GeoJSONSource } from "maplibre-gl";
 import MapView, { fitTo } from "../components/MapView";
 import { currentTheme, nodeColor, onTheme, routeColor, snrColor } from "../themes";
-import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, duration, ignoreNode, makeResolver, useApi, useLive } from "../api";
-import { UNITS, distanceM, ringFeatures, ringStep } from "../rings";
+import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, duration, ignoreNode, knownTime, makeResolver, useApi, useLive } from "../api";
+import { CARDINAL_AT, Rect, UNITS, distanceM, freeRect, inRect, inset, pullInside, ringFeatures, ringStep } from "../rings";
 
 const ROUTE_MS = 2600;
 const SPEEDS = [1, 10, 60, 300];
@@ -138,7 +138,7 @@ export default function LiveMap() {
             color: nodeColor(n.node_type),
             owned: f ? (down ? 2 : 1) : 0,
             big: n.node_type === "repeater" || n.node_type === "room" ? 1 : 0,
-            stale: n.stale ? 1 : 0,
+            stale: n.stale && knownTime(n.last_seen) != null ? 1 : 0,
           },
         };
       }),
@@ -181,7 +181,8 @@ export default function LiveMap() {
         const f = e.features?.[0];
         if (!f) return;
         const n = byKeyRef.current.get(f.properties!.key);
-        const stale = n?.stale ? ` <span class="pill stale">stale · ${duration(Date.now() / 1000 - n.last_seen)}</span>` : "";
+        const heard = knownTime(n?.last_seen);
+        const stale = n?.stale && heard != null ? ` <span class="pill stale">stale · ${duration(Date.now() / 1000 - heard)}</span>` : "";
         const pop = new maplibregl.Popup({ closeButton: true })
           .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
           .setHTML(
@@ -232,12 +233,34 @@ export default function LiveMap() {
     let lines = EMPTY;
     let labels = EMPTY;
     if (on && at) {
-      const c = m.getCenter();
-      const b = m.getBounds();
-      const span = Math.min(distanceM(c.lat, c.lng, c.lat, b.getEast()), distanceM(c.lat, c.lng, b.getNorth(), c.lng));
-      const fc = ringFeatures(at[1], at[0], ringStep(span, UNITS), UNITS);
-      lines = fc.lines;
-      labels = fc.labels;
+      // Size the rings from the part of the map no panel or control covers, not the whole
+      // canvas, and keep every label inside that part.
+      const safe = inset(unobscured(m), LABEL_PAD);
+      if (safe.right > safe.left && safe.bottom > safe.top) {
+        const cx = (safe.left + safe.right) / 2;
+        const cy = (safe.top + safe.bottom) / 2;
+        const half = Math.min(safe.right - safe.left, safe.bottom - safe.top) / 2;
+        const c = m.unproject([cx, cy]);
+        const n = m.unproject([cx, cy - half]);
+        const e = m.unproject([cx + half, cy]);
+        const span = Math.min(distanceM(c.lat, c.lng, n.lat, n.lng), distanceM(c.lat, c.lng, e.lat, e.lng)) / CARDINAL_AT;
+        const fc = ringFeatures(at[1], at[0], ringStep(span, UNITS), UNITS);
+        const p = m.project(at);
+        const from: [number, number] = [p.x, p.y];
+        const kept: GeoJSON.Feature[] = [];
+        for (const f of fc.labels.features) {
+          const q = m.project((f.geometry as GeoJSON.Point).coordinates as [number, number]);
+          if (inRect(safe, q.x, q.y)) kept.push(f);
+          else if (f.properties?.kind === "cardinal") {
+            // Slide a compass tag back along its spoke into view; drop it if the station is off view.
+            const at2 = pullInside(safe, from, [q.x, q.y]);
+            if (at2) kept.push({ ...f, geometry: { type: "Point", coordinates: m.unproject(at2).toArray() } });
+          }
+          // A distance label that can't be seen is dropped: moving it would mislabel its ring.
+        }
+        lines = fc.lines;
+        labels = { type: "FeatureCollection", features: kept };
+      }
     }
     for (const [id, data] of [["rings", lines], ["ringlabels", labels]] as const) {
       const src = m.getSource(id) as GeoJSONSource | undefined;
@@ -346,13 +369,19 @@ export default function LiveMap() {
           map.current = m;
           drawStatic(m);
           let queued = 0;
-          m.on("move", () => {
+          const redraw = () => {
             if (!ringState.current.on || queued) return;
             queued = requestAnimationFrame(() => {
               queued = 0;
               drawRings(m);
             });
-          });
+          };
+          m.on("move", redraw);
+          m.on("resize", redraw);
+          // The packet feed grows as packets arrive and panels can change size, which moves the free area.
+          const ro = new ResizeObserver(redraw);
+          m.getContainer().parentElement?.querySelectorAll(".overlay").forEach((el) => ro.observe(el));
+          m.once("remove", () => ro.disconnect());
           setReady(true);
         }}
       />
@@ -436,6 +465,34 @@ export default function LiveMap() {
       </div>
     </div>
   );
+}
+
+/** Room left around ring labels so a whole label, not just its centre point, stays in view. */
+const LABEL_PAD = 22;
+
+/** The map area, in pixels, that the legend, packet feed, replay bar, map controls and any open drawer leave visible. */
+function unobscured(m: MlMap): Rect {
+  const box = m.getContainer().getBoundingClientRect();
+  const obstacles: Rect[] = [];
+  const parent = m.getContainer().parentElement ?? document.body;
+  const els = [
+    ...parent.querySelectorAll(".overlay"),
+    ...m.getContainer().querySelectorAll(".maplibregl-ctrl"),
+    ...document.querySelectorAll(".drawer"),
+  ];
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) continue;
+    obstacles.push({ left: r.left - box.left, top: r.top - box.top, right: r.right - box.left, bottom: r.bottom - box.top });
+  }
+  // The visible part of the map, in case the page scrolls part of it out of the window.
+  const view: Rect = {
+    left: Math.max(0, -box.left),
+    top: Math.max(0, -box.top),
+    right: Math.min(box.width, window.innerWidth - box.left),
+    bottom: Math.min(box.height, window.innerHeight - box.top),
+  };
+  return freeRect(view, obstacles);
 }
 
 function escapeHtml(s: string) {

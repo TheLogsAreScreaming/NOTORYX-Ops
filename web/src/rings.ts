@@ -8,6 +8,8 @@ export const UNITS: Units = "metric";
 const EARTH_M = 6371000;
 const MILE_M = 1609.344;
 export const RING_COUNT = 4;
+/** Compass tags sit this far out, as a share of the outer ring. */
+export const CARDINAL_AT = 1.08;
 
 /** Great-circle distance in metres. */
 export function distanceM(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -85,7 +87,7 @@ export function ringFeatures(lat: number, lon: number, step: { meters: number; v
     if (CARD[b]) {
       labels.push({
         type: "Feature",
-        geometry: { type: "Point", coordinates: destination(lat, lon, b, outer * 1.08) },
+        geometry: { type: "Point", coordinates: destination(lat, lon, b, outer * CARDINAL_AT) },
         properties: { kind: "cardinal", text: CARD[b] },
       });
     }
@@ -94,4 +96,55 @@ export function ringFeatures(lat: number, lon: number, step: { meters: number; v
     lines: { type: "FeatureCollection", features: lines } as GeoJSON.FeatureCollection,
     labels: { type: "FeatureCollection", features: labels } as GeoJSON.FeatureCollection,
   };
+}
+
+/** A screen rectangle in pixels, relative to the map container. */
+export type Rect = { left: number; top: number; right: number; bottom: number };
+
+/**
+ * The part of the map that no panel or control covers. Each obstacle that overlaps the
+ * free area is cut off along whichever side keeps the largest free rectangle, so the
+ * result never overlaps any obstacle.
+ */
+export function freeRect(box: Rect, obstacles: Rect[]): Rect {
+  let free = { ...box };
+  const area = (r: Rect) => Math.max(0, r.right - r.left) * Math.max(0, r.bottom - r.top);
+  // Biggest panels first, so a small one is never cut in a way a big one then undoes.
+  for (const o of [...obstacles].sort((a, b) => area(b) - area(a))) {
+    if (o.right <= free.left || o.left >= free.right || o.bottom <= free.top || o.top >= free.bottom) continue;
+    const cuts: Rect[] = [
+      { ...free, left: Math.max(free.left, o.right) },
+      { ...free, right: Math.min(free.right, o.left) },
+      { ...free, top: Math.max(free.top, o.bottom) },
+      { ...free, bottom: Math.min(free.bottom, o.top) },
+    ];
+    free = cuts.reduce((best, c) => (area(c) > area(best) ? c : best));
+  }
+  return free;
+}
+
+/** Shrinks a rectangle by `pad` pixels on every side. */
+export function inset(r: Rect, pad: number): Rect {
+  return { left: r.left + pad, top: r.top + pad, right: r.right - pad, bottom: r.bottom - pad };
+}
+
+export function inRect(r: Rect, x: number, y: number): boolean {
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/**
+ * Where the line from `from` (inside r) towards `to` leaves r, or `to` itself when it is
+ * inside. Null when `from` is outside r. Used to slide a compass tag back along its spoke.
+ */
+export function pullInside(r: Rect, from: [number, number], to: [number, number]): [number, number] | null {
+  if (!inRect(r, from[0], from[1])) return null;
+  if (inRect(r, to[0], to[1])) return to;
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  let t = 1;
+  if (dx > 0) t = Math.min(t, (r.right - from[0]) / dx);
+  if (dx < 0) t = Math.min(t, (r.left - from[0]) / dx);
+  if (dy > 0) t = Math.min(t, (r.bottom - from[1]) / dy);
+  if (dy < 0) t = Math.min(t, (r.top - from[1]) / dy);
+  return [from[0] + dx * t, from[1] + dy * t];
 }
