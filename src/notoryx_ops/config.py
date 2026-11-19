@@ -70,6 +70,24 @@ webhook_url = ""
 # Shared secret to sign generic webhooks (HMAC-SHA256 in X-Notoryx-Signature).
 webhook_secret = ""
 
+[terrain]
+# Elevation for coverage maps and link profiles: "glo90" (90 m, ~5 MB per 1° tile) or
+# "glo30" (30 m, ~40 MB per tile). Tiles download on first use and stay in the data folder.
+source = "glo90"
+# Your LoRa settings, used to predict signal strength.
+freq_mhz = 910.525
+bandwidth_khz = 62.5
+spreading_factor = 7
+tx_power_dbm = 22
+antenna_gain_dbi = 3
+cable_loss_db = 1
+noise_figure_db = 6
+# Antenna heights above ground when nothing else is known.
+repeater_height_m = 10
+client_height_m = 1.5
+# Correct predictions with the median error on links the station has measured.
+use_calibration = true
+
 # Add one block per MQTT broker that carries observer packets.
 # [[mqtt]]
 # name = "Local broker"
@@ -122,6 +140,17 @@ class Config:
     webhook_url: str = ""
     webhook_secret: str = ""
     mqtt: list[MqttSource] = field(default_factory=list)
+    terrain_source: str = "glo90"
+    freq_mhz: float = 910.525
+    bandwidth_khz: float = 62.5
+    spreading_factor: int = 7
+    tx_power_dbm: float = 22
+    antenna_gain_dbi: float = 3
+    cable_loss_db: float = 1
+    noise_figure_db: float = 6
+    repeater_height_m: float = 10
+    client_height_m: float = 1.5
+    use_calibration: bool = True
 
     @property
     def db_path(self) -> Path:
@@ -150,6 +179,7 @@ def load(path: Path | None = None) -> Config:
     raw = tomllib.loads(path.read_text())
     st, rd = raw.get("station", {}), raw.get("radio", {})
     fl, al = raw.get("fleet", {}), raw.get("alerts", {})
+    tr = raw.get("terrain", {})
     data_dir = Path(st.get("data_dir", "data")).expanduser()
     if not data_dir.is_absolute():
         data_dir = path.parent / data_dir
@@ -181,7 +211,20 @@ def load(path: Path | None = None) -> Config:
         webhook_url=al.get("webhook_url", ""),
         webhook_secret=al.get("webhook_secret", ""),
         mqtt=[MqttSource(**m) for m in raw.get("mqtt", [])],
+        terrain_source=str(tr.get("source", "glo90")),
+        freq_mhz=float(tr.get("freq_mhz", Config.freq_mhz)),
+        bandwidth_khz=float(tr.get("bandwidth_khz", Config.bandwidth_khz)),
+        spreading_factor=int(tr.get("spreading_factor", Config.spreading_factor)),
+        tx_power_dbm=float(tr.get("tx_power_dbm", Config.tx_power_dbm)),
+        antenna_gain_dbi=float(tr.get("antenna_gain_dbi", Config.antenna_gain_dbi)),
+        cable_loss_db=float(tr.get("cable_loss_db", Config.cable_loss_db)),
+        noise_figure_db=float(tr.get("noise_figure_db", Config.noise_figure_db)),
+        repeater_height_m=float(tr.get("repeater_height_m", Config.repeater_height_m)),
+        client_height_m=float(tr.get("client_height_m", Config.client_height_m)),
+        use_calibration=bool(tr.get("use_calibration", True)),
     )
+    if cfg.terrain_source not in ("glo90", "glo30"):
+        cfg.terrain_source = "glo90"
     if cfg.poll_minutes < 5:
         cfg.poll_minutes = 5
     if cfg.stale_after_hours not in STALE_CHOICES_HOURS:

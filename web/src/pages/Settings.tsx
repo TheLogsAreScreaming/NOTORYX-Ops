@@ -108,6 +108,7 @@ export default function Settings() {
       radio: s.radio,
       channels: s.channels,
       fleet: s.fleet,
+      terrain: s.terrain,
       alerts: { webhook_url: s.alerts.webhook_url, discord_webhook: discord, webhook_secret: secret },
       mqtt: s.mqtt.map((m: any, i: number) => ({ ...m, password: mqttPw[i] === undefined ? null : mqttPw[i] })),
     };
@@ -249,6 +250,41 @@ export default function Settings() {
             <Field label="Quiet after (hours)"><input type="number" step="0.5" value={s.fleet.quiet_hours} onChange={(e) => set("fleet.quiet_hours", Number(e.target.value))} /></Field>
             <Field label="Low battery (volts)"><input type="number" step="0.05" value={s.fleet.low_battery_volts} onChange={(e) => set("fleet.low_battery_volts", Number(e.target.value))} /></Field>
             <Field label="Expected firmware" hint="Older repeaters get an alert. Empty = off."><input value={s.fleet.expected_firmware} placeholder="1.11.0" onChange={(e) => set("fleet.expected_firmware", e.target.value)} /></Field>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Terrain and radio model</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>
+            Used by Coverage → Terrain, Link profile and Plan relays. Set these to match your radios so predictions are close.
+          </div>
+          <div className="formgrid">
+            <Field label="Elevation data" hint="Downloads on first use of an area.">
+              <select value={s.terrain.source} onChange={(e) => set("terrain.source", e.target.value)}>
+                <option value="glo90">Copernicus GLO-90 (90 m, ~5 MB per tile)</option>
+                <option value="glo30">Copernicus GLO-30 (30 m, ~40 MB per tile)</option>
+              </select>
+            </Field>
+            <Field label="Frequency (MHz)"><input type="number" step="0.001" value={s.terrain.freq_mhz} onChange={(e) => set("terrain.freq_mhz", Number(e.target.value))} /></Field>
+            <Field label="Bandwidth (kHz)">
+              <select value={s.terrain.bandwidth_khz} onChange={(e) => set("terrain.bandwidth_khz", Number(e.target.value))}>
+                {[7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125, 250, 500].map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </Field>
+            <Field label="Spreading factor">
+              <select value={s.terrain.spreading_factor} onChange={(e) => set("terrain.spreading_factor", Number(e.target.value))}>
+                {[5, 6, 7, 8, 9, 10, 11, 12].map((f) => <option key={f} value={f}>SF{f}</option>)}
+              </select>
+            </Field>
+            <Field label="Transmit power (dBm)"><input type="number" value={s.terrain.tx_power_dbm} onChange={(e) => set("terrain.tx_power_dbm", Number(e.target.value))} /></Field>
+            <Field label="Antenna gain (dBi)"><input type="number" step="0.5" value={s.terrain.antenna_gain_dbi} onChange={(e) => set("terrain.antenna_gain_dbi", Number(e.target.value))} /></Field>
+            <Field label="Cable loss (dB)"><input type="number" step="0.5" value={s.terrain.cable_loss_db} onChange={(e) => set("terrain.cable_loss_db", Number(e.target.value))} /></Field>
+            <Field label="Receiver noise figure (dB)"><input type="number" step="0.5" value={s.terrain.noise_figure_db} onChange={(e) => set("terrain.noise_figure_db", Number(e.target.value))} /></Field>
+            <Field label="Repeater antenna height (m)"><input type="number" step="0.5" value={s.terrain.repeater_height_m} onChange={(e) => set("terrain.repeater_height_m", Number(e.target.value))} /></Field>
+            <Field label="Handheld antenna height (m)"><input type="number" step="0.5" value={s.terrain.client_height_m} onChange={(e) => set("terrain.client_height_m", Number(e.target.value))} /></Field>
+            <Field label="Calibrate from measured links" hint="Shifts predictions by the median error on links the station has heard.">
+              <input type="checkbox" checked={!!s.terrain.use_calibration} onChange={(e) => set("terrain.use_calibration", e.target.checked)} />
+            </Field>
           </div>
         </div>
 

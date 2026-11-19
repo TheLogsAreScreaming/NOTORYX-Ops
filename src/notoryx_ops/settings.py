@@ -18,6 +18,16 @@ RESTART_FIELDS = ("host", "port")
 SECRETS = ("admin_token", "discord_webhook", "webhook_secret")
 
 
+# Settings page key -> Config attribute for the [terrain] block.
+TERRAIN_FIELDS = {
+    "source": "terrain_source", "freq_mhz": "freq_mhz", "bandwidth_khz": "bandwidth_khz",
+    "spreading_factor": "spreading_factor", "tx_power_dbm": "tx_power_dbm", "antenna_gain_dbi": "antenna_gain_dbi",
+    "cable_loss_db": "cable_loss_db", "noise_figure_db": "noise_figure_db", "repeater_height_m": "repeater_height_m",
+    "client_height_m": "client_height_m", "use_calibration": "use_calibration",
+}
+BANDWIDTHS = (7.8, 10.4, 15.6, 20.8, 31.25, 41.7, 62.5, 125.0, 250.0, 500.0)
+
+
 def public_view(cfg: Config) -> dict[str, Any]:
     return {
         "station": {
@@ -45,6 +55,7 @@ def public_view(cfg: Config) -> dict[str, Any]:
              "tls": m.tls, "topics": list(m.topics)}
             for m in cfg.mqtt
         ],
+        "terrain": {k: getattr(cfg, a) for k, a in TERRAIN_FIELDS.items()},
         "demo": cfg.demo,
         "config_path": str(cfg.path),
     }
@@ -142,6 +153,25 @@ def apply_changes(cfg: Config, data: dict[str, Any]) -> list[str]:
         new["webhook_url"] = _url(al.get("webhook_url", cfg.webhook_url), "Webhook URL")
         if al.get("webhook_secret") is not None:
             new["webhook_secret"] = _text(al["webhook_secret"], "Webhook secret", 200)
+    tr = data.get("terrain") or {}
+    if tr:
+        src = tr.get("source", cfg.terrain_source)
+        if src not in ("glo90", "glo30"):
+            raise ValueError("Elevation source must be GLO-90 or GLO-30.")
+        new["terrain_source"] = src
+        new["freq_mhz"] = _num(tr.get("freq_mhz", cfg.freq_mhz), 137, 2500, "Frequency (MHz)")
+        bw = _num(tr.get("bandwidth_khz", cfg.bandwidth_khz), 7, 500, "Bandwidth (kHz)")
+        if bw not in BANDWIDTHS:
+            raise ValueError("Bandwidth must be a LoRa bandwidth such as 62.5, 125 or 250 kHz.")
+        new["bandwidth_khz"] = bw
+        new["spreading_factor"] = _int(tr.get("spreading_factor", cfg.spreading_factor), 5, 12, "Spreading factor")
+        new["tx_power_dbm"] = _num(tr.get("tx_power_dbm", cfg.tx_power_dbm), -10, 37, "Transmit power (dBm)")
+        new["antenna_gain_dbi"] = _num(tr.get("antenna_gain_dbi", cfg.antenna_gain_dbi), -10, 20, "Antenna gain (dBi)")
+        new["cable_loss_db"] = _num(tr.get("cable_loss_db", cfg.cable_loss_db), 0, 20, "Cable loss (dB)")
+        new["noise_figure_db"] = _num(tr.get("noise_figure_db", cfg.noise_figure_db), 0, 20, "Noise figure (dB)")
+        new["repeater_height_m"] = _num(tr.get("repeater_height_m", cfg.repeater_height_m), 0, 300, "Repeater antenna height (m)")
+        new["client_height_m"] = _num(tr.get("client_height_m", cfg.client_height_m), 0, 300, "Client antenna height (m)")
+        new["use_calibration"] = bool(tr.get("use_calibration", cfg.use_calibration))
     if "mqtt" in data:
         old = {m.name: m for m in cfg.mqtt}
         brokers = []
@@ -214,6 +244,19 @@ def to_toml(cfg: Config) -> str:
         f"discord_webhook = {_q(cfg.discord_webhook)}",
         f"webhook_url = {_q(cfg.webhook_url)}",
         f"webhook_secret = {_q(cfg.webhook_secret)}",
+        "",
+        "[terrain]",
+        f"source = {_q(cfg.terrain_source)}",
+        f"freq_mhz = {float(cfg.freq_mhz)}",
+        f"bandwidth_khz = {float(cfg.bandwidth_khz)}",
+        f"spreading_factor = {int(cfg.spreading_factor)}",
+        f"tx_power_dbm = {float(cfg.tx_power_dbm)}",
+        f"antenna_gain_dbi = {float(cfg.antenna_gain_dbi)}",
+        f"cable_loss_db = {float(cfg.cable_loss_db)}",
+        f"noise_figure_db = {float(cfg.noise_figure_db)}",
+        f"repeater_height_m = {float(cfg.repeater_height_m)}",
+        f"client_height_m = {float(cfg.client_height_m)}",
+        f"use_calibration = {'true' if cfg.use_calibration else 'false'}",
     ]
     for m in cfg.mqtt:
         lines += [
