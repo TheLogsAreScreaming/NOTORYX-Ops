@@ -11,7 +11,7 @@ NOTORYX Ops runs on a Raspberry Pi, a Mac or in Docker, next to a MeshCore compa
 - **Integrations:** GeoJSON and GPX exports, Prometheus metrics at `/metrics`, a read-only public map at `/public` with rounded positions, Home Assistant sensors over MQTT discovery, and a PostgreSQL archive (`pip install "notoryx-ops[postgres]"`).
 - **Fleet:** logs in to the repeaters you own and keeps their health over time: battery, noise floor, airtime, uptime, neighbours and firmware. It raises alerts when a repeater goes quiet, its battery is low or falling, its firmware is behind, or two repeaters share a prefix, and sends them to Discord or a webhook. Bulk settings change one setting on several repeaters after showing the current values.
 
-Status: first test version, **not yet tested with a real radio**. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).
+Status: test builds; the latest is **0.1.7 test 8** with the Meshtastic add-on 0.1.1 (19 November 2026), from [NOTORYX-Ops-Releases](https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases). Checked on a real station with a MeshCore radio (live packets, map, stale nodes, ignore list, range rings, hazard reports on a test channel) and, for the add-on, with two Meshtastic radios (remote reads and writes, reboot, and the bridge both ways). Teams on the radio, add-on template apply and the fleet tools on real repeaters are not checked on hardware yet. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).
 
 ## Try it without a radio
 
