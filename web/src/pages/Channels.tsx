@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ago, api, clock, useApi, useLive } from "../api";
+import { decodeMessage, isSarneg, loadKeys, parseKeys, saveKeys, wordFor, type SarnegKeys } from "../sarneg";
 
 type Msg = { id?: number; channel: string; sender: string | null; text: string; received_at: number; hops: number };
 
@@ -8,6 +9,7 @@ export default function Channels() {
   const [sel, setSel] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const channel = sel ?? data?.channels?.[0]?.name ?? null;
+  const [keys, setKeys] = useState<SarnegKeys | null>(() => loadKeys());
 
   useEffect(() => {
     if (!channel) return;
@@ -47,6 +49,7 @@ export default function Channels() {
               </button>
             ))}
           </div>
+          <SarnegCard keys={keys} onChange={(k) => (saveKeys(k), setKeys(k))} />
           {data?.unknown?.length > 0 && (
             <div className="card">
               <h2>Other channels heard</h2>
@@ -71,11 +74,85 @@ export default function Channels() {
                   <span className="faint small">{clock(m.received_at)} · {m.hops} hops</span>
                 </div>
                 <div>{m.text}</div>
+                {isSarneg(m.text) && <SarnegLine text={m.text} at={m.received_at} keys={keys} />}
               </div>
             ))}
           </div>
         </div>
       </div>
     </>
+  );
+}
+
+/** Under a "[SARNEG]" message: click to show its numbers. */
+function SarnegLine({ text, at, keys }: { text: string; at: number; keys: SarnegKeys | null }) {
+  const [open, setOpen] = useState(false);
+  const decoded = keys ? decodeMessage(text, wordFor(keys, at)) : null;
+  const label = !open ? "SARNEG · click to decode" : decoded == null ? "SARNEG · set a code word to decode" : `Decoded: ${decoded}`;
+  return (
+    <button
+      onClick={() => setOpen((o) => !o)}
+      aria-label={open ? label : "Decode SARNEG numbers"}
+      className={open && decoded != null ? "mono small" : "small"}
+      style={{ border: 0, background: "transparent", padding: "2px 0", color: "var(--accent)", textAlign: "left" }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** The SARNEG code word for decoding, kept in this browser only. */
+function SarnegCard({ keys, onChange }: { keys: SarnegKeys | null; onChange: (k: SarnegKeys | null) => void }) {
+  const [text, setText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [shown, setShown] = useState(false);
+  const today = keys ? wordFor(keys, new Date()) : null;
+  return (
+    <div className="card">
+      <h2>SARNEG code word</h2>
+      <div className="small muted" style={{ marginBottom: 6 }}>
+        Decodes numbers sent as SARNEG letters by GhostWave and NOTORYX apps. Kept in this browser only, never sent to the
+        station. SARNEG is not encryption.
+      </div>
+      {keys ? (
+        <>
+          <div className="row small">
+            <span>Today: <span className="mono">{shown ? today : "••••••••••"}</span></span>
+            <button onClick={() => setShown((v) => !v)}>{shown ? "Hide" : "Show"}</button>
+            <button onClick={() => (onChange(null), setShown(false))}>Forget</button>
+          </div>
+          {Object.keys(keys.daily).length > 0 && (
+            <div className="small faint">{Object.keys(keys.daily).length} dated words</div>
+          )}
+        </>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            try {
+              onChange(parseKeys(text));
+              setText("");
+              setErr(null);
+            } catch (x) {
+              setErr((x as Error).message);
+            }
+          }}
+        >
+          <label className="small" htmlFor="sarneg-word">Word or shared text (SARNEG1:…)</label>
+          <input
+            id="sarneg-word"
+            className="mono"
+            autoComplete="off"
+            spellCheck={false}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="BLACKHORSE"
+            style={{ width: "100%" }}
+          />
+          {err && <div className="small" role="alert" style={{ color: "var(--bad, #e5484d)" }}>{err}</div>}
+          <button type="submit" style={{ marginTop: 6 }}>Use this word</button>
+        </form>
+      )}
+    </div>
   );
 }
