@@ -111,7 +111,7 @@ function SarnegCard({ keys, onChange }: { keys: SarnegKeys | null; onChange: (k:
     <div className="card">
       <h2>SARNEG code word</h2>
       <div className="small muted" style={{ marginBottom: 6 }}>
-        Decodes numbers sent as SARNEG letters by GhostWave and NOTORYX apps. Kept in this browser only, never sent to the
+        Decodes numbers sent as SARNEG letters by NOTORYX apps. Kept in this browser only, never sent to the
         station. SARNEG is not encryption.
       </div>
       {keys ? (
