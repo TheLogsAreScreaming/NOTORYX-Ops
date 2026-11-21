@@ -1,6 +1,6 @@
 // SARNEG: Search And Rescue Numerical Encryption Grid.
 //
-// Same wire format as GhostWave and the NOTORYX phone apps:
+// Same wire format as the NOTORYX phone apps:
 //   "[SARNEG] LRs KSAC" = "17S 4823" with the word BLACKHORSE.
 // Each digit is sent as the code letter at that index (UPPER case); every
 // other letter goes in lower case so it is never read as a digit.
