@@ -23,6 +23,17 @@ export type Theme = {
 
 export const THEMES: Theme[] = [
   {
+    // NOTORYX BLACKOUT: matte, charcoal, gunmetal, steel, frost. No brand colour; the colours
+    // that carry meaning (status, node types, routes, signal scale, charts) stay coloured.
+    id: "blackout", name: "BLACKOUT", blurb: "Matte black and frost steel", mode: "dark",
+    ui: { bg: "#080808", panel: "#242424", panel2: "#1a1a1a", line: "#484848", lineStrong: "#5c5c5c", text: "#e8e8e8", text2: "#b8b8b8", text3: "#969696", accent: "#e8e8e8", accentBg: "#2e2e2e", accent2: "#888888", onAccent: "#080808", blue: "#9fb4c8", blueBg: "#1f262c", ok: "#9cc69b", okBg: "#1c2a1c", warn: "#d9b45a", warnBg: "#30291a", bad: "#e8806f", badBg: "#341e1b", info: "#b7a6d6", infoBg: "#25212e" },
+    map: { land: "#0e0e0e", water: "#030303", park: "#121212", road: "#262626", roadMajor: "#383838", building: "#151515", label: "#888888", halo: "#080808", boundary: "#484848" },
+    nodes: { repeater: "#e8e8e8", room: "#c9a227", companion: "#9fb4c8", sensor: "#b7a6d6", unknown: "#888888" },
+    routes: { advert: "#e8e8e8", group: "#9fb4c8", dm: "#c9a227", ack: "#5c5c5c", trace: "#b7a6d6" },
+    snr: ["#9cc69b", "#c6c98a", "#d9b45a", "#d9925a", "#e8806f"],
+    chart: ["#e8e8e8", "#c9a227", "#9fb4c8"],
+  },
+  {
     id: "aurora", name: "Aurora", blurb: "Violet night with a pink glow", mode: "dark",
     ui: { bg: "#0e0c1d", panel: "#16132b", panel2: "#1e1a38", line: "#2b2650", lineStrong: "#3d3770", text: "#eeedff", text2: "#b3aed8", text3: "#7f7aab", accent: "#a98bff", accentBg: "#2a2150", accent2: "#ff8fb1", onAccent: "#140f2b", blue: "#7cc4ff", blueBg: "#182a48", ok: "#6ee7b7", okBg: "#123329", warn: "#ffc46b", warnBg: "#3a2a12", bad: "#ff7a8a", badBg: "#3d1823", info: "#c9b0ff", infoBg: "#2a2150" },
     map: { land: "#13112a", water: "#0a0820", park: "#17153a", road: "#29244f", roadMajor: "#3b3373", building: "#1b1838", label: "#8f88c6", halo: "#0e0c1d", boundary: "#4d4290" },
@@ -39,15 +50,6 @@ export const THEMES: Theme[] = [
     routes: { advert: "#ff9248", group: "#ffd166", dm: "#e0a6ff", ack: "#7a6457", trace: "#8fb8de" },
     snr: ["#a3d977", "#d8e07a", "#ffd166", "#ff9248", "#ff4d6d"],
     chart: ["#ff9248", "#ffd166", "#8fb8de"],
-  },
-  {
-    id: "rose", name: "Rose Quartz", blurb: "Plum velvet and rose gold", mode: "dark",
-    ui: { bg: "#170f15", panel: "#21151e", panel2: "#2b1c27", line: "#3e2a38", lineStrong: "#57394e", text: "#fdf0f6", text2: "#d6b8c7", text3: "#9c7c8d", accent: "#f4a6c0", accentBg: "#44213a", accent2: "#e8c39e", onAccent: "#2a0f1e", blue: "#a9c7ff", blueBg: "#22284a", ok: "#9de0c2", okBg: "#17352c", warn: "#f0c98a", warnBg: "#3d2f1a", bad: "#ff7f8f", badBg: "#451b26", info: "#d3b0ff", infoBg: "#33224a" },
-    map: { land: "#1b1219", water: "#100a0f", park: "#22171f", road: "#3a2734", roadMajor: "#5c3c51", building: "#25171f", label: "#ad8b9d", halo: "#170f15", boundary: "#714c63" },
-    nodes: { repeater: "#f4a6c0", room: "#e8c39e", companion: "#a9c7ff", sensor: "#9de0c2", unknown: "#9c7c8d" },
-    routes: { advert: "#f4a6c0", group: "#a9c7ff", dm: "#e8c39e", ack: "#7d6371", trace: "#9de0c2" },
-    snr: ["#9de0c2", "#cfe6a8", "#f0c98a", "#f6a58a", "#ff7f8f"],
-    chart: ["#f4a6c0", "#e8c39e", "#a9c7ff"],
   },
   {
     id: "nebula", name: "Nebula", blurb: "Deep space, electric magenta", mode: "dark",
@@ -68,15 +70,6 @@ export const THEMES: Theme[] = [
     chart: ["#e8e3d3", "#c9a227", "#9fb4c8"],
   },
   {
-    id: "glacier", name: "Glacier", blurb: "Ice white and cobalt", mode: "light",
-    ui: { bg: "#eef3f8", panel: "#ffffff", panel2: "#f5f8fc", line: "#dbe4ee", lineStrong: "#c3d0de", text: "#0f1e33", text2: "#44566e", text3: "#73839a", accent: "#2f5bea", accentBg: "#e3eafe", accent2: "#12b5cb", onAccent: "#ffffff", blue: "#1b6fb0", blueBg: "#e0eefa", ok: "#1a7f53", okBg: "#def3e9", warn: "#9a6100", warnBg: "#fbf0d8", bad: "#c22f39", badBg: "#fbe4e6", info: "#6236cc", infoBg: "#ece5fd" },
-    map: { land: "#f3f6fa", water: "#cddff2", park: "#e3eef0", road: "#ffffff", roadMajor: "#dbe5f1", building: "#e5eaf1", label: "#56677f", halo: "#f3f6fa", boundary: "#9cadc4" },
-    nodes: { repeater: "#2f5bea", room: "#6236cc", companion: "#0e9fb3", sensor: "#c47a00", unknown: "#73839a" },
-    routes: { advert: "#2f5bea", group: "#0e9fb3", dm: "#6236cc", ack: "#8a99ad", trace: "#c47a00" },
-    snr: ["#1a9a63", "#7aa61c", "#c79300", "#d9661c", "#c22f39"],
-    chart: ["#2f5bea", "#0e9fb3", "#6236cc"],
-  },
-  {
     id: "sandstone", name: "Sandstone", blurb: "Desert paper and terracotta", mode: "light",
     ui: { bg: "#f5efe6", panel: "#fffbf5", panel2: "#f8f1e7", line: "#e6dccd", lineStrong: "#d4c6b2", text: "#2b2118", text2: "#5e4e40", text3: "#887868", accent: "#c2552d", accentBg: "#f6e2d8", accent2: "#2e7d6b", onAccent: "#ffffff", blue: "#2f6690", blueBg: "#e2ecf3", ok: "#3d7a3a", okBg: "#e5f0dc", warn: "#9a610c", warnBg: "#f8ebd2", bad: "#b3261e", badBg: "#f7dfdc", info: "#7a4ea0", infoBg: "#efe5f6" },
     map: { land: "#f3ece1", water: "#c8dadf", park: "#e4e5cf", road: "#fffaf2", roadMajor: "#ead8c0", building: "#e8dfd2", label: "#76665a", halo: "#f3ece1", boundary: "#b9a48b" },
@@ -85,20 +78,11 @@ export const THEMES: Theme[] = [
     snr: ["#3d7a3a", "#7f8f2a", "#b7860f", "#cf6a2a", "#b3261e"],
     chart: ["#c2552d", "#2f6690", "#2e7d6b"],
   },
-  {
-    id: "paper", name: "Ink & Paper", blurb: "Printed map, black ink", mode: "light",
-    ui: { bg: "#f7f6f2", panel: "#ffffff", panel2: "#f4f3ee", line: "#e4e2db", lineStrong: "#cfccc2", text: "#141414", text2: "#4c4b47", text3: "#7d7b74", accent: "#141414", accentBg: "#ebeae5", accent2: "#e4572e", onAccent: "#ffffff", blue: "#3a5a8c", blueBg: "#e6ebf3", ok: "#2f6f3e", okBg: "#e3efe5", warn: "#94640a", warnBg: "#f6edd8", bad: "#c0392b", badBg: "#f8e2df", info: "#5b4a8c", infoBg: "#ebe7f4" },
-    map: { land: "#f6f5f0", water: "#d9dde2", park: "#e9eae1", road: "#ffffff", roadMajor: "#e4e1d8", building: "#ebe9e2", label: "#66655f", halo: "#f6f5f0", boundary: "#aaa69a" },
-    nodes: { repeater: "#141414", room: "#e4572e", companion: "#3a5a8c", sensor: "#94640a", unknown: "#7d7b74" },
-    routes: { advert: "#141414", group: "#3a5a8c", dm: "#e4572e", ack: "#a3a199", trace: "#94640a" },
-    snr: ["#2f6f3e", "#6f8a2a", "#b0860f", "#cf6a2a", "#c0392b"],
-    chart: ["#141414", "#e4572e", "#3a5a8c"],
-  },
 ];
 
 const KEY = "notoryx-ops-look";
-export const DEFAULT_THEME = "aurora";
-let current: Theme = THEMES[0];
+export const DEFAULT_THEME = "blackout";
+let current: Theme = THEMES.find((x) => x.id === DEFAULT_THEME) || THEMES[0];
 
 export function currentTheme(): Theme {
   return current;
@@ -116,7 +100,8 @@ function css(t: Theme): Record<string, string> {
 }
 
 export function applyTheme(id: string, save = true) {
-  const t = THEMES.find((x) => x.id === id) || THEMES[0];
+  // A saved look that no longer exists (or a bad value) falls back to the default look.
+  const t = THEMES.find((x) => x.id === id) || THEMES.find((x) => x.id === DEFAULT_THEME) || THEMES[0];
   current = t;
   const root = document.documentElement;
   for (const [k, v] of Object.entries(css(t))) root.style.setProperty(k, v);
@@ -140,6 +125,14 @@ export function restoreTheme() {
     /* storage blocked: default look */
   }
   applyTheme(id, false);
+  if (current.id !== id) {
+    // The saved look was removed: remember the fallback so the old value is gone.
+    try {
+      localStorage.setItem(KEY, current.id);
+    } catch {
+      /* storage blocked */
+    }
+  }
 }
 
 export function onTheme(fn: (t: Theme) => void): () => void {
