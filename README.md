@@ -35,7 +35,7 @@ All screenshots are from demo mode with made-up nodes.
 
 ## Status
 
-Test builds. The latest is **0.1.8 test 9** (21 November 2026, with SARNEG decoding) and the Meshtastic add-on 0.1.1, from [NOTORYX-Ops-Releases](https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases). The BLACKOUT look and icons are merged and arrive in the next build.
+Test builds. The latest is **0.1.9 test 10** (22 November 2026, the BLACKOUT look and icons) with the Meshtastic add-on 0.1.1, from [NOTORYX-Ops-Releases](https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases). SARNEG decoding arrived in 0.1.8 test 9.
 
 Checked on a real station with a MeshCore radio: live packets, the map, stale nodes, the ignore list, range rings, and hazard reports on a test channel. The Meshtastic add-on was checked with two Meshtastic radios: remote reads and writes, reboot, and the bridge both ways. Not checked on hardware yet: teams on the radio, add-on template apply, and the fleet tools on real repeaters. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).
 
