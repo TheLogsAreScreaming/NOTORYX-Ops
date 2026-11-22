@@ -81,6 +81,8 @@ export const THEMES: Theme[] = [
 ];
 
 const KEY = "notoryx-ops-look";
+// Resolved colours of the current look, read by add-on pages so they match the dashboard.
+export const VARS_KEY = "notoryx-ops-look-vars";
 export const DEFAULT_THEME = "blackout";
 let current: Theme = THEMES.find((x) => x.id === DEFAULT_THEME) || THEMES[0];
 
@@ -107,6 +109,11 @@ export function applyTheme(id: string, save = true) {
   for (const [k, v] of Object.entries(css(t))) root.style.setProperty(k, v);
   root.dataset.mode = t.mode;
   root.style.colorScheme = t.mode;
+  try {
+    localStorage.setItem(VARS_KEY, JSON.stringify({ id: t.id, mode: t.mode, vars: css(t) }));
+  } catch {
+    /* storage blocked: add-on pages keep their default look */
+  }
   if (save) {
     try {
       localStorage.setItem(KEY, t.id);

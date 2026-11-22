@@ -7,10 +7,9 @@
 <title>Meshtastic · NOTORYX Ops</title>
 <link rel="icon" href="/icon.svg">
 <style>
-  :root { --bg:#0e0c1d; --panel:#16132b; --panel2:#1e1a38; --line:#2b2650; --text:#eeedff; --text2:#b3aed8; --text3:#7f7aab;
-          --accent:#a98bff; --ok:#6ee7b7; --warn:#ffc46b; --bad:#ff7a8a; --radius:10px; color-scheme: dark; }
-  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#f6f5fb; --panel:#ffffff; --panel2:#efedf8; --line:#dcd8ee;
-          --text:#1c1933; --text2:#4b4670; --text3:#7a7598; --accent:#6c4ee0; --ok:#0f8a5f; --warn:#a86200; --bad:#c2334a; color-scheme: light; } }
+  /* Default = the BLACKOUT look; the script below swaps in the look picked on the dashboard. */
+  :root { --bg:#080808; --panel:#242424; --panel2:#1a1a1a; --line:#484848; --text:#e8e8e8; --text2:#b8b8b8; --text3:#969696;
+          --accent:#e8e8e8; --on-accent:#080808; --ok:#9cc69b; --warn:#d9b45a; --bad:#e8806f; --radius:10px; color-scheme: dark; }
   * { box-sizing: border-box; } [hidden] { display: none !important; }
   body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
   header { display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
@@ -23,7 +22,7 @@
   .muted { color:var(--text2); } .faint { color:var(--text3); } .small { font-size:12px; }
   .mono { font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
   button, input, select, textarea { font:inherit; color:inherit; background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; }
-  button { cursor:pointer; } button.primary { background:var(--accent); color:#fff; border-color:transparent; } button:disabled { opacity:.5; cursor:default; }
+  button { cursor:pointer; } button.primary { background:var(--accent); color:var(--on-accent); border-color:transparent; } button:disabled { opacity:.5; cursor:default; }
   button.danger { color:var(--bad); }
   table { width:100%; border-collapse:collapse; font-size:13px; } th, td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--line); }
   th { color:var(--text3); font-weight:500; } tr.sel td { background:var(--panel2); }
@@ -36,6 +35,27 @@
   label.f { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--text2); }
   textarea { width:100%; min-height:70px; }
 </style>
+<script>
+  // Follow the look picked on the NOTORYX Ops dashboard (same origin, saved by the dashboard).
+  (function () {
+    var MAP = { "--bg":"--bg", "--panel":"--panel", "--panel-2":"--panel2", "--line":"--line", "--text":"--text",
+                "--text-2":"--text2", "--text-3":"--text3", "--accent":"--accent", "--on-accent":"--on-accent",
+                "--ok":"--ok", "--warn":"--warn", "--bad":"--bad" };
+    function apply() {
+      var saved = null;
+      try { saved = JSON.parse(localStorage.getItem("notoryx-ops-look-vars") || "null"); } catch (e) { saved = null; }
+      if (!saved || !saved.vars) return;
+      var root = document.documentElement;
+      for (var k in MAP) {
+        var v = saved.vars[k];
+        if (typeof v === "string" && /^#[0-9a-fA-F]{3,8}$/.test(v)) root.style.setProperty(MAP[k], v);
+      }
+      root.style.colorScheme = saved.mode === "light" ? "light" : "dark";
+    }
+    apply();
+    window.addEventListener("storage", function (e) { if (e.key === "notoryx-ops-look-vars") apply(); });
+  })();
+</script>
 </head>
 <body>
 <header>
