@@ -1,6 +1,6 @@
 // NOTORYX Ops: keeps the dashboard's own files so survey mode opens with no signal.
 // Only the app shell is cached. API calls, live updates and map tiles always go to the network.
-const CACHE = "notoryx-ops-shell-v1";
+const CACHE = "notoryx-ops-shell-v2";
 const SHELL = ["/", "/survey", "/icon.svg"];
 
 self.addEventListener("install", (e) => {
