@@ -1,18 +1,43 @@
+<p align="center"><img src="docs/images/banner.png" alt="NOTORYX Ops" width="100%"></p>
+
 # NOTORYX Ops
 
 Network dashboard and infrastructure station for MeshCore.
 
-NOTORYX Ops runs on a Raspberry Pi, a Mac or in Docker, next to a MeshCore companion radio. It has two sides:
+NOTORYX Ops runs on a Raspberry Pi, a Mac (as its own app window) or in Docker, next to a MeshCore companion radio. Open the dashboard in any browser on your network.
 
-- **Analyzer:** decodes every packet heard by the station radio and by observers on MQTT brokers. It shows a live route map with a 24-hour replay and range rings, a node list that marks stale nodes and lets you ignore noisy ones, a packet feed with a decoder, channel messages, observer health, coverage hexes and analytics, including a one-byte prefix collision grid.
-- **Terrain planning:** coverage maps worked out from real elevation (Copernicus DEM), link profiles with line of sight, Fresnel zone and a link budget, high-ground finder, and "what if" relay planning that shows the area a new relay would add. Predictions can be calibrated against the links the station has measured.
-- **Field work:** hazard reports (flooded road, fallen tree, power line down...) sent and received as plain channel messages any MeshCore app can read, teams on their own private channels with position tracks, and an offline survey mode for phones that saves each spot and uploads it when the station can be reached. CSV and GPX survey imports.
-- **SARNEG decoding:** on the Channels page, enter your team's SARNEG code word (or paste the share text from the NOTORYX phone apps) and click to decode any message starting with `[SARNEG]`. The word stays in that browser only and is never sent to the station. Decoding only; Ops doesn't send. SARNEG is not encryption. Merged after 0.1.7 test 8, so it arrives in the next test build.
-- **Accounts and roles:** optional sign-in with viewer, operator and admin roles. The admin token keeps working for scripts.
-- **Integrations:** GeoJSON and GPX exports, Prometheus metrics at `/metrics`, a read-only public map at `/public` with rounded positions, Home Assistant sensors over MQTT discovery, and a PostgreSQL archive (`pip install "notoryx-ops[postgres]"`).
-- **Fleet:** logs in to the repeaters you own and keeps their health over time: battery, noise floor, airtime, uptime, neighbours and firmware. It raises alerts when a repeater goes quiet, its battery is low or falling, its firmware is behind, or two repeaters share a prefix, and sends them to Discord or a webhook. Bulk settings change one setting on several repeaters after showing the current values.
+![Live map with range rings and the live packet feed](docs/images/screenshots/live-map-rings.png)
 
-Status: test builds; the latest is **0.1.7 test 8** with the Meshtastic add-on 0.1.1 (19 November 2026), from [NOTORYX-Ops-Releases](https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases). Checked on a real station with a MeshCore radio (live packets, map, stale nodes, ignore list, range rings, hazard reports on a test channel) and, for the add-on, with two Meshtastic radios (remote reads and writes, reboot, and the bridge both ways). Teams on the radio, add-on template apply and the fleet tools on real repeaters are not checked on hardware yet. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).
+## What it does
+
+- **Live map:** every packet heard by the station radio and by observers on MQTT brokers, drawn as routes on the map as it arrives, with a 24-hour replay, range rings around your station, faded stale nodes and an ignore list for noisy ones.
+- **Packets, nodes and observers:** a packet feed with a decoder, a node list with type, prefix, last heard, best SNR and position, and the health of each observer.
+- **Channels and SARNEG:** messages on every channel the station has a key for. Enter your team's SARNEG code word (or paste the share text from the NOTORYX phone apps) and click any `[SARNEG]` message to read its numbers. The word stays in that browser and is never sent to the station. Ops decodes only; it doesn't send SARNEG. SARNEG is not encryption.
+- **Fleet:** logs in to the repeaters you own and tracks battery, noise floor, airtime, uptime, neighbours and firmware over time. Alerts go to Discord or a webhook when a repeater goes quiet, its battery is low or falling, its firmware is behind, or two repeaters share a prefix. Bulk settings show the current values before changing one setting on several repeaters.
+- **Coverage and planning:** measured coverage hexes, plus coverage worked out from real elevation (Copernicus DEM), link profiles with line of sight, Fresnel zone and a link budget, a high-ground finder and relay planning that shows the area a new relay would add. Predictions can be calibrated against links the station has heard.
+- **Field work:** hazard reports (flooded road, fallen tree, power line down and more) sent and received as plain channel messages any MeshCore app can read, teams on their own private channels with position tracks, and an offline survey mode for phones that saves each spot and uploads it later. CSV and GPX survey imports.
+- **Analytics:** packet counts, a 7-day activity grid, packet types, busiest relays, most active nodes and a one-byte prefix clash check.
+- **Accounts and integrations:** optional sign-in with viewer, operator and admin roles (the admin token keeps working for scripts), GeoJSON and GPX exports, Prometheus metrics at `/metrics`, a read-only public map at `/public` with rounded positions (off by default), Home Assistant sensors over MQTT discovery, and a PostgreSQL archive (`pip install "notoryx-ops[postgres]"`).
+- **Looks:** BLACKOUT (the default), Aurora, Ember, Nebula, Graphite and Sandstone. The map, node, route, signal and chart colours change with the look.
+- **Meshtastic add-on (optional, GPL-3.0):** remote admin of Meshtastic nodes over the air, settings templates with compliance checks, and a Meshtastic⇄MeshCore channel bridge. See [the add-on](addons/meshtastic/).
+
+## Screenshots
+
+All screenshots are from demo mode with made-up nodes.
+
+| | |
+|---|---|
+| ![Nodes](docs/images/screenshots/nodes.png) **Nodes** with type, prefix, last heard and best SNR | ![Packets](docs/images/screenshots/packets.png) **Packets** from every observer |
+| ![Channels with SARNEG decoding](docs/images/screenshots/channels-sarneg.png) **Channels** with SARNEG messages decoded | ![Fleet](docs/images/screenshots/fleet.png) **My fleet**: battery, noise, SNR, uptime and firmware |
+| ![Field work](docs/images/screenshots/field-reports.png) **Field work**: hazard reports on the map, teams and surveys | ![Coverage](docs/images/screenshots/coverage.png) **Coverage** from measured links, terrain and relay planning |
+| ![Analytics](docs/images/screenshots/analytics.png) **Analytics** for the last 24 hours and 7 days | ![Settings](docs/images/screenshots/settings-looks.png) **Settings** with the six looks |
+| ![Meshtastic add-on](docs/images/screenshots/meshtastic-addon.png) **Meshtastic add-on** page (radio not connected) | |
+
+## Status
+
+Test builds. The latest is **0.1.9 test 10** (22 November 2026, the BLACKOUT look and icons) with the Meshtastic add-on 0.1.1, from [NOTORYX-Ops-Releases](https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases). SARNEG decoding arrived in 0.1.8 test 9.
+
+Checked on a real station with a MeshCore radio: live packets, the map, stale nodes, the ignore list, range rings, and hazard reports on a test channel. The Meshtastic add-on was checked with two Meshtastic radios: remote reads and writes, reboot, and the bridge both ways. Not checked on hardware yet: teams on the radio, add-on template apply, and the fleet tools on real repeaters. See [docs/USER_GUIDE.md](docs/USER_GUIDE.md) and [docs/PLAN.md](docs/PLAN.md).
 
 ## Try it without a radio
 
@@ -44,12 +69,16 @@ Demo mode fills the dashboard with made-up traffic and a pretend fleet. Nothing 
 | `src/notoryx_ops/integrations.py` | Exports, metrics, public map, Home Assistant, PostgreSQL |
 | `src/notoryx_ops/server.py` | Web API and live updates |
 | `web/` | Dashboard (React, MapLibre, uPlot) |
+| `web/src/themes.ts` | The looks (BLACKOUT is the default) |
+| `web/src/sarneg.ts` | SARNEG decoding, same format as the NOTORYX phone apps |
 | `packaging/` | Docker and Raspberry Pi installer |
-| `macos/` | Native Mac app (Swift window around the dashboard) |
+| `macos/` | Native Mac app (Swift window around the dashboard; Quit stops the station) |
+| `docs/images/` | README banner and screenshots |
 
 ## Development
 
 ```bash
+.venv/bin/notoryx-ops where   # where the config and data live
 .venv/bin/pytest -q
 .venv/bin/ruff check src tests
 cd web && npm run dev     # dashboard on :5173, proxied to a station on :8484
