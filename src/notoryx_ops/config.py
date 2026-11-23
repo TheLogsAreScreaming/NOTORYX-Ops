@@ -97,6 +97,11 @@ public_title = ""
 # Decimal places kept in public positions: 2 is about 1 km, 3 about 100 m.
 public_precision = 2
 public_show_companions = false
+# Send network stats (counts and short node ids, no names or positions) to a stats relay
+# every 15 minutes, for a public "live network" page.
+stats_push = false
+stats_push_url = "https://stats.meshmayhem.org/v1/push"
+stats_push_token = ""
 
 [homeassistant]
 # Publishes station and fleet sensors to Home Assistant over MQTT (discovery).
@@ -183,6 +188,9 @@ class Config:
     public_title: str = ""
     public_precision: int = 2
     public_show_companions: bool = False
+    stats_push_enabled: bool = False
+    stats_push_url: str = ""
+    stats_push_token: str = ""
     ha_enabled: bool = False
     ha_host: str = ""
     ha_port: int = 1883
@@ -272,6 +280,9 @@ def load(path: Path | None = None) -> Config:
         public_title=str(ig.get("public_title", "")),
         public_precision=int(ig.get("public_precision", 2)),
         public_show_companions=bool(ig.get("public_show_companions", False)),
+        stats_push_enabled=bool(ig.get("stats_push", False)),
+        stats_push_url=str(ig.get("stats_push_url", "")),
+        stats_push_token=str(ig.get("stats_push_token", "")),
         ha_enabled=bool(ha.get("enabled", False)),
         ha_host=str(ha.get("host", "")),
         ha_port=int(ha.get("port", 1883)),

@@ -76,6 +76,7 @@ export default function Settings() {
   const [secret, setSecret] = useState<string | null>(null);
   const [mqttPw, setMqttPw] = useState<Record<number, string | null>>({});
   const [metricsTok, setMetricsTok] = useState<string | null>(null);
+  const [statsTok, setStatsTok] = useState<string | null>(null);
   const [haPw, setHaPw] = useState<string | null>(null);
   const [pgDsn, setPgDsn] = useState<string | null>(null);
   const [intMsg, setIntMsg] = useState("");
@@ -83,7 +84,7 @@ export default function Settings() {
 
   const load = () =>
     api("/api/settings")
-      .then((d) => (setS(d), setTok(null), setDiscord(null), setSecret(null), setMqttPw({}), setMetricsTok(null), setHaPw(null), setPgDsn(null)))
+      .then((d) => (setS(d), setTok(null), setDiscord(null), setSecret(null), setMqttPw({}), setMetricsTok(null), setStatsTok(null), setHaPw(null), setPgDsn(null)))
       .catch((e) => setErr(e.message));
   useEffect(() => {
     load();
@@ -116,7 +117,7 @@ export default function Settings() {
       channels: s.channels,
       fleet: s.fleet,
       terrain: s.terrain,
-      integrations: { ...s.integrations, metrics_token: metricsTok },
+      integrations: { ...s.integrations, metrics_token: metricsTok, stats_push_token: statsTok },
       homeassistant: { ...s.homeassistant, password: haPw },
       postgres: { enabled: s.postgres.enabled, dsn: pgDsn },
       alerts: { webhook_url: s.alerts.webhook_url, discord_webhook: discord, webhook_secret: secret },
@@ -131,6 +132,7 @@ export default function Settings() {
         setSecret(null);
         setMqttPw({});
         setMetricsTok(null);
+        setStatsTok(null);
         setHaPw(null);
         setPgDsn(null);
         setMsg(r.restart_needed.length
@@ -334,6 +336,24 @@ export default function Settings() {
               </select>
             </Field>
             <Field label="Show companions too"><input type="checkbox" checked={!!s.integrations.public_show_companions} onChange={(e) => set("integrations.public_show_companions", e.target.checked)} /></Field>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2>Live network stats</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>
+            Every 15 minutes, sends counts for the last 7 days (repeaters, nodes, countries, links) to a stats relay for a public "live network" page.
+            Nodes go as the first 8 characters of their public key with a country code, so two stations never count one node twice. No names, positions, messages or fleet data are sent.
+            Ignored nodes are left out. Your own counts are at <a href="/api/public/stats">/api/public/stats</a> while the public map or sharing is on.
+          </div>
+          <div className="formgrid">
+            <Field label="Share stats"><input type="checkbox" checked={!!s.integrations.stats_push} onChange={(e) => set("integrations.stats_push", e.target.checked)} /></Field>
+            <Field label="Relay address"><input value={s.integrations.stats_push_url} placeholder="https://stats.meshmayhem.org/v1/push" onChange={(e) => set("integrations.stats_push_url", e.target.value)} /></Field>
+            <Field label="Relay token"><Secret isSet={s.integrations.stats_push_token_set} value={statsTok} onChange={setStatsTok} placeholder="24+ characters, from the relay owner" /></Field>
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <button type="button" onClick={() => api<any>("/api/integrations/stats/push", { method: "POST" }).then((r) => setIntMsg(`Sent: ${r.sent.repeaters} repeaters, ${r.sent.nodes} nodes, ${r.sent.countries} countries, ${r.sent.links} links.`)).catch((e) => setIntMsg(e.message))}>Send now</button>
+            <span className="small faint">Save first.</span>
           </div>
         </div>
 

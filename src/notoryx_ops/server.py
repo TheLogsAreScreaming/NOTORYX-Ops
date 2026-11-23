@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, planning, settings
+from . import analytics, decoder, integrations, netstats, planning, settings
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -396,6 +396,24 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         if not cfg.public_map:
             raise HTTPException(404, "The public map is off.")
         return integrations.public_view(st.store, cfg)
+
+    @app.get("/api/public/stats")
+    def public_stats():
+        if not (cfg.public_map or cfg.stats_push_enabled):
+            raise HTTPException(404, "Public stats are off.")
+        return netstats.public_counts(netstats.snapshot(st.store, cfg))
+
+    @app.post("/api/integrations/stats/push", dependencies=[Depends(admin)])
+    async def stats_push_now():
+        if not st.stats_push.ready:
+            raise HTTPException(400, "Turn on stats sharing and enter the relay address and token first.")
+        try:
+            counts = await asyncio.to_thread(st.stats_push.push_once)
+        except Exception as exc:  # noqa: BLE001
+            st.stats_push.state, st.stats_push.error = "error", str(exc).split("\n")[0][:300]
+            raise HTTPException(503, f"Couldn't reach the stats relay: {st.stats_push.error}") from exc
+        st.stats_push.state, st.stats_push.error, st.stats_push.last_push = "ok", None, time.time()
+        return {"sent": counts}
 
     @app.post("/api/integrations/homeassistant/test", dependencies=[Depends(admin)])
     async def ha_test():

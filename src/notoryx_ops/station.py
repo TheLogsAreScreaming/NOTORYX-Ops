@@ -18,6 +18,7 @@ from .fleet import Fleet
 from .ingest import Hub, Ingest
 from .integrations import HomeAssistant, PostgresArchive
 from .mqtt_ingest import MqttFeed
+from .netstats import StatsPush
 from .planning import Planner
 from .radio import RadioLink
 from .store import Store
@@ -50,6 +51,7 @@ class Station:
         self.auth = Auth(cfg, self.store)
         self.ha = HomeAssistant(cfg, self.store, self)
         self.pg = PostgresArchive(cfg, self.store)
+        self.stats_push = StatsPush(cfg, self.store)
         from . import addons
 
         self.addons = addons.load(self, addon_factories)
@@ -75,6 +77,7 @@ class Station:
         self.fleet.start()
         self.ha.start()
         self.pg.start()
+        self.stats_push.start()
         for a in self.addons:
             try:
                 a.start()
@@ -91,6 +94,7 @@ class Station:
         ha_before = (self.cfg.ha_enabled, self.cfg.ha_host, self.cfg.ha_port, self.cfg.ha_username, self.cfg.ha_password,
                      self.cfg.ha_tls, self.cfg.ha_prefix)
         pg_before = (self.cfg.pg_enabled, self.cfg.pg_dsn)
+        push_before = (self.cfg.stats_push_enabled, self.cfg.stats_push_url, self.cfg.stats_push_token)
         mqtt_before = [asdict(m) for m in self.cfg.mqtt]
         restart = settings.apply_changes(self.cfg, data)
         settings.save(self.cfg)
@@ -123,6 +127,9 @@ class Station:
         if (self.cfg.pg_enabled, self.cfg.pg_dsn) != pg_before:
             self.pg.stop()
             self.pg.start()
+        if (self.cfg.stats_push_enabled, self.cfg.stats_push_url, self.cfg.stats_push_token) != push_before:
+            self.stats_push.stop()
+            self.stats_push.start()
         self.alerts.evaluate()
         return restart
 
@@ -132,6 +139,7 @@ class Station:
             m.stop()
         self.ha.stop()
         self.pg.stop()
+        self.stats_push.stop()
         for a in self.addons:
             try:
                 a.stop()
@@ -162,6 +170,7 @@ class Station:
             "stale_after_hours": self.cfg.stale_after_hours,
             "homeassistant": self.ha.info(),
             "postgres": self.pg.info(),
+            "stats_push": self.stats_push.info(),
             "public_map": self.cfg.public_map,
             "addons": [{"id": a.id, "name": a.name, "version": a.version, "license": a.license} for a in self.addons],
         }

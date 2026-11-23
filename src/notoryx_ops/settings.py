@@ -15,7 +15,7 @@ TRANSPORTS = ("none", "serial", "ble", "tcp")
 RESTART_FIELDS = ("host", "port")
 
 # Secret fields: never sent to the browser. On save, None keeps the value, "" clears it.
-SECRETS = ("admin_token", "discord_webhook", "webhook_secret", "metrics_token", "ha_password", "pg_dsn")
+SECRETS = ("admin_token", "discord_webhook", "webhook_secret", "metrics_token", "ha_password", "pg_dsn", "stats_push_token")
 
 
 # Settings page key -> Config attribute for the [terrain] block.
@@ -59,6 +59,8 @@ def public_view(cfg: Config) -> dict[str, Any]:
         "integrations": {
             "metrics_token_set": bool(cfg.metrics_token), "public_map": cfg.public_map, "public_title": cfg.public_title,
             "public_precision": cfg.public_precision, "public_show_companions": cfg.public_show_companions,
+            "stats_push": cfg.stats_push_enabled, "stats_push_url": cfg.stats_push_url,
+            "stats_push_token_set": bool(cfg.stats_push_token),
         },
         "homeassistant": {
             "enabled": cfg.ha_enabled, "host": cfg.ha_host, "port": cfg.ha_port, "username": cfg.ha_username,
@@ -192,6 +194,17 @@ def apply_changes(cfg: Config, data: dict[str, Any]) -> list[str]:
         new["public_title"] = _text(ig.get("public_title", cfg.public_title), "Public map title", 60)
         new["public_precision"] = _int(ig.get("public_precision", cfg.public_precision), 1, 4, "Public position detail")
         new["public_show_companions"] = bool(ig.get("public_show_companions", cfg.public_show_companions))
+        new["stats_push_enabled"] = bool(ig.get("stats_push", cfg.stats_push_enabled))
+        new["stats_push_url"] = _url(ig.get("stats_push_url", cfg.stats_push_url), "Stats relay address")
+        if new["stats_push_url"].startswith("http://"):
+            raise ValueError("Stats relay address must use https://.")
+        if ig.get("stats_push_token") is not None:
+            stok = _text(ig["stats_push_token"], "Stats relay token", 200)
+            if stok and len(stok) < 24:
+                raise ValueError("Stats relay token must be at least 24 characters.")
+            new["stats_push_token"] = stok
+        if new["stats_push_enabled"] and not (new["stats_push_url"] and new.get("stats_push_token", cfg.stats_push_token)):
+            raise ValueError("Enter the stats relay address and token before turning stats sharing on.")
     ha = data.get("homeassistant") or {}
     if ha:
         new["ha_enabled"] = bool(ha.get("enabled", cfg.ha_enabled))
@@ -310,6 +323,9 @@ def to_toml(cfg: Config) -> str:
         f"public_title = {_q(cfg.public_title)}",
         f"public_precision = {int(cfg.public_precision)}",
         f"public_show_companions = {'true' if cfg.public_show_companions else 'false'}",
+        f"stats_push = {'true' if cfg.stats_push_enabled else 'false'}",
+        f"stats_push_url = {_q(cfg.stats_push_url)}",
+        f"stats_push_token = {_q(cfg.stats_push_token)}",
         "",
         "[homeassistant]",
         f"enabled = {'true' if cfg.ha_enabled else 'false'}",
