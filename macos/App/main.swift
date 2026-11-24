@@ -163,6 +163,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 return fail("Setting up the station failed. Details are in the log.", showLog: true)
             }
             FileManager.default.createFile(atPath: stamp.path, contents: nil)
+            // A new version: drop cached pages so the dashboard can't show the old screens.
+            // Saved looks and other local settings are kept.
+            DispatchQueue.main.async {
+                WKWebsiteDataStore.default().removeData(
+                    ofTypes: [WKWebsiteDataTypeDiskCache, WKWebsiteDataTypeMemoryCache],
+                    modifiedSince: .distantPast) {}
+            }
         }
 
         let py = venvDir.appendingPathComponent("bin/python").path
