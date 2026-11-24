@@ -155,6 +155,16 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
                 return JSONResponse({"detail": "Sign in first."}, status_code=401)
         return await call_next(request)
 
+    @app.middleware("http")
+    async def fresh_pages(request: Request, call_next):
+        # Pages and add-on files keep the same names between versions, so tell browsers (and the Mac app's
+        # web view) to check for a newer copy every time. Hashed files under /assets/ may be cached as usual.
+        response = await call_next(request)
+        path = request.url.path
+        if not path.startswith(("/assets/", "/api/", "/ws")) and "cache-control" not in response.headers:
+            response.headers["cache-control"] = "no-cache"
+        return response
+
     # ---- accounts -------------------------------------------------------------
     @app.get("/api/auth/me")
     def auth_me(request: Request):

@@ -74,3 +74,17 @@ def test_websocket_gets_live_events(tmp_path):
     with make(tmp_path) as c, c.websocket_connect("/ws") as ws:
         ev = ws.receive_json()
         assert ev["type"] in ("packet", "message", "ping", "fleet", "fleet_status", "alert")
+
+
+def test_pages_are_never_served_stale(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from notoryx_ops import config
+    from notoryx_ops.server import create_app
+
+    cfg = config.load(tmp_path / "config.toml")
+    cfg.demo = True
+    with TestClient(create_app(cfg)) as c:
+        page = c.get("/settings")
+        assert page.headers.get("cache-control") == "no-cache"
+        assert "cache-control" not in c.get("/api/station").headers
