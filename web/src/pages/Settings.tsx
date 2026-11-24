@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useState } from "react";
 import { ago, api, getToken, setToken, unignoreNode, useApi } from "../api";
 import { LookGallery } from "../components/ThemePicker";
 import Accounts from "../components/Accounts";
+import RadioCard from "../components/RadioCard";
 import { useMe } from "../auth";
 
 type S = any;
@@ -67,9 +68,6 @@ export default function Settings() {
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ports, setPorts] = useState<any[] | null>(null);
-  const [ble, setBle] = useState<any[] | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [newChan, setNewChan] = useState("");
   const [token, setTok] = useState<string | null>(null);
   const [discord, setDiscord] = useState<string | null>(null);
@@ -97,17 +95,6 @@ export default function Settings() {
     setMsg(null);
     setErr(null);
   };
-
-  function scanPorts() {
-    api<any[]>("/api/settings/serial-ports").then(setPorts).catch((e) => setErr(e.message));
-  }
-  function scanBle() {
-    setScanning(true);
-    api<any[]>("/api/settings/ble-scan")
-      .then(setBle)
-      .catch((e) => setErr(e.message))
-      .finally(() => setScanning(false));
-  }
 
   function save() {
     setBusy(true);
@@ -165,69 +152,7 @@ export default function Settings() {
       </div>
 
       <div className="grid2">
-        <div className="card">
-          <h2>Radio</h2>
-          <div className="small muted" style={{ marginBottom: 10 }}>The MeshCore companion radio this station listens with and uses to reach your repeaters. Only one app can use a Bluetooth radio at a time.</div>
-          <div className="seg" role="radiogroup" aria-label="Connection">
-            {[["none", "None"], ["serial", "USB"], ["ble", "Bluetooth"], ["tcp", "Wi-Fi / TCP"]].map(([v, l]) => (
-              <button key={v} type="button" role="radio" aria-checked={r.transport === v} className={r.transport === v ? "on" : ""} onClick={() => set("radio.transport", v)}>{l}</button>
-            ))}
-          </div>
-          {r.transport === "serial" && (
-            <div className="stack" style={{ marginTop: 10 }}>
-              <Field label="USB port">
-                <div className="row">
-                  <input style={{ flex: 1 }} className="mono" value={r.serial_port} onChange={(e) => set("radio.serial_port", e.target.value)} />
-                  <button type="button" onClick={scanPorts}>Find ports</button>
-                </div>
-              </Field>
-              {ports && (
-                <div className="picklist">
-                  {ports.length === 0 && <div className="small muted">No USB serial ports found.</div>}
-                  {ports.map((p) => (
-                    <button key={p.device} type="button" className={p.device === r.serial_port ? "on" : ""} onClick={() => set("radio.serial_port", p.device)}>
-                      <span className="mono">{p.device}</span>
-                      <span className="small faint">{[p.description, p.manufacturer].filter(Boolean).join(" · ")}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <Field label="Baud rate"><input type="number" value={r.baudrate} onChange={(e) => set("radio.baudrate", Number(e.target.value))} /></Field>
-            </div>
-          )}
-          {r.transport === "ble" && (
-            <div className="stack" style={{ marginTop: 10 }}>
-              <Field label="Bluetooth radio" hint="Leave empty to use the first MeshCore radio found.">
-                <div className="row">
-                  <input style={{ flex: 1 }} className="mono" value={r.ble_address} onChange={(e) => set("radio.ble_address", e.target.value)} />
-                  <button type="button" onClick={scanBle} disabled={scanning}>{scanning ? "Scanning…" : "Scan"}</button>
-                </div>
-              </Field>
-              {ble && (
-                <div className="picklist">
-                  {ble.length === 0 && <div className="small muted">No MeshCore radios heard. Make sure it's on and not connected to another app.</div>}
-                  {ble.map((d) => (
-                    <button key={d.address} type="button" className={d.address === r.ble_address ? "on" : ""} onClick={() => set("radio.ble_address", d.address)}>
-                      <span>{d.name}</span>
-                      <span className="small faint mono">{d.address} · {d.rssi} dBm</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {r.transport === "tcp" && (
-            <div className="row" style={{ marginTop: 10, alignItems: "flex-start" }}>
-              <Field label="Address"><input value={r.tcp_host} placeholder="192.168.1.50" onChange={(e) => set("radio.tcp_host", e.target.value)} /></Field>
-              <Field label="Port"><input type="number" style={{ width: 100 }} value={r.tcp_port} onChange={(e) => set("radio.tcp_port", Number(e.target.value))} /></Field>
-            </div>
-          )}
-          <div style={{ marginTop: 10 }}>
-            <Field label="Observer name" hint="How this radio shows up on the Observers page.">
-              <input value={r.observer_name} onChange={(e) => set("radio.observer_name", e.target.value)} />
-            </Field>
-          </div>
-        </div>
+        <RadioCard r={r} set={set} onSaved={(radio) => setS((x: S) => ({ ...x, radio }))} onError={setErr} />
 
         <div className="card">
           <h2>Channels</h2>

@@ -65,6 +65,7 @@ async function loadStatus() {
     showTransport();
     $("m-section").innerHTML = status.sections.map((x) => `<option>${esc(x)}</option>`).join("");
   }
+  $("disconnect").hidden = r.transport === "none" || r.state === "off";
   $("bridge-hint").textContent = `MeshCore channels on this station: ${status.meshcore_channels.join(", ") || "none"}.`;
   const b = status.bridge.stats;
   $("bridge-stats").textContent = `Sent to MeshCore ${b.to_meshcore} · to Meshtastic ${b.to_meshtastic} · held back by the limit ${b.dropped_rate} · failed ${b.dropped_error}` +
@@ -76,16 +77,65 @@ function showTransport() {
   $("f-serial").hidden = t !== "serial";
   $("f-tcp").hidden = t !== "tcp";
   $("f-ble").hidden = t !== "ble";
+  $("find-radios").hidden = !(t === "ble" || t === "serial");
+  $("radio-list").hidden = true;
 }
-$("transport").onchange = showTransport;
-
-$("save-radio").onclick = async () => {
-  try {
-    await api("/settings", { method: "PUT", body: { transport: $("transport").value, serial_port: $("serial_port").value, tcp_host: $("tcp_host").value, ble_address: $("ble_address").value } });
-    say($("radio-msg"), "Saved. Connecting…");
-    setTimeout(loadStatus, 2500);
-  } catch (e) { say($("radio-msg"), e.message, false); }
+$("transport").onchange = () => {
+  showTransport();
+  const t = $("transport").value;
+  if (t === "serial" || (t === "ble" && !(status && status.radio.state === "connected"))) findRadios();
 };
+
+async function connectRadio(extra, message) {
+  try {
+    const body = { transport: $("transport").value, serial_port: $("serial_port").value, tcp_host: $("tcp_host").value, ble_address: $("ble_address").value, ...extra };
+    await api("/settings", { method: "PUT", body });
+    say($("radio-msg"), message || "Saved. Connecting…");
+    setTimeout(loadStatus, 2500);
+    setTimeout(loadStatus, 8000);
+  } catch (e) { say($("radio-msg"), e.message, false); }
+}
+
+// Lists nearby Bluetooth radios or USB ports with a Connect button each.
+async function findRadios() {
+  const kind = $("transport").value === "serial" ? "serial" : "ble";
+  const list = $("radio-list");
+  list.hidden = false;
+  list.innerHTML = `<div class="small muted">${kind === "ble" ? "Looking for Meshtastic radios nearby…" : "Looking for USB ports…"}</div>`;
+  $("find-radios").disabled = true;
+  try {
+    const found = await api(`/radios?kind=${kind}`);
+    const r = status && status.radio;
+    const rows = [];
+    if (kind === "ble" && r && r.state === "connected" && r.transport === "ble" && r.me) {
+      rows.push(`<div class="radio-row"><span class="grow"><div>${esc(r.me.long_name || r.me.id)}</div><div class="small faint mono">${esc($("ble_address").value || r.me.id)}</div></span><span class="pill ok">Connected</span></div>`);
+    }
+    for (const d of found) {
+      rows.push(`<div class="radio-row"><span class="grow"><div>${esc(d.name)}</div><div class="small faint mono">${esc(d.address)}${d.rssi != null ? ` · ${d.rssi} dBm` : ""}</div></span><button class="primary" data-addr="${esc(d.address)}" data-name="${esc(d.name)}">Connect</button></div>`);
+    }
+    if (!found.length) {
+      rows.push(`<div class="small muted">${kind === "ble"
+        ? (r && r.state === "connected" ? "No other Meshtastic radios heard. A connected radio stops advertising; Disconnect first to switch." : "No Meshtastic radios heard. Make sure it's switched on and not connected to your phone or another app, then Find radios again.")
+        : "No USB radios found. Plug it in with a data cable, then Find radios again."}</div>`);
+    }
+    list.innerHTML = rows.join("");
+    list.querySelectorAll("button[data-addr]").forEach((b) => {
+      b.onclick = () => {
+        const addr = b.dataset.addr;
+        if (kind === "ble") $("ble_address").value = addr; else $("serial_port").value = addr;
+        connectRadio(kind === "ble" ? { ble_address: addr } : { serial_port: addr }, `Connecting to ${b.dataset.name}…`);
+      };
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="small err">${esc(e.message)}</div>`;
+  } finally {
+    $("find-radios").disabled = false;
+  }
+}
+$("find-radios").onclick = findRadios;
+
+$("save-radio").onclick = () => connectRadio({});
+$("disconnect").onclick = () => connectRadio({ transport: "none" }, "Disconnected. The radio is free for other apps.").then(() => { $("transport").value = "none"; showTransport(); });
 
 $("save-bridge").onclick = async () => {
   try {
