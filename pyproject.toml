@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "notoryx-ops"
-version = "0.1.14"
+version = "0.1.15"
 description = "MeshCore network dashboard and infrastructure station"
 readme = "README.md"
 license = "MIT"
