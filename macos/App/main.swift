@@ -53,6 +53,15 @@ func openLog() -> FileHandle? {
     return h
 }
 
+/// Puts text from the dashboard's Copy buttons on the Mac clipboard.
+final class CopyHandler: NSObject, WKScriptMessageHandler {
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let text = message.body as? String, !text.isEmpty, text.count <= 20_000 else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     var window: NSWindow!
     var web: WKWebView!
@@ -99,6 +108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         let cfg = WKWebViewConfiguration()
         cfg.applicationNameForUserAgent = "NOTORYXOpsApp/1"
+        // The web view has no clipboard access of its own; pages copy through this handler.
+        cfg.userContentController.add(CopyHandler(), name: "notoryxCopy")
         web = WKWebView(frame: frame, configuration: cfg)
         web.navigationDelegate = self
         web.uiDelegate = self

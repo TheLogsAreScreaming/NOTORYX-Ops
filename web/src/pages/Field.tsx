@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { GeoJSONSource, Map as MlMap, MapMouseEvent } from "maplibre-gl";
 import MapView, { fitTo, onGlobe } from "../components/MapView";
-import { ago, api, Node, useApi, useLive } from "../api";
+import { ago, api, copyText, Node, useApi, useLive } from "../api";
 import { useMe } from "../auth";
 import { currentTheme, onTheme } from "../themes";
 
@@ -267,7 +267,7 @@ export default function Field() {
               {t.channel_key && (
                 <div className="small" style={{ marginTop: 4 }}>
                   Key <span className="mono" style={{ wordBreak: "break-all" }}>{t.channel_key}</span>{" "}
-                  <button type="button" className="small" onClick={() => navigator.clipboard?.writeText(t.channel_key).then(() => setMsg("Key copied."))}>Copy</button>
+                  <button type="button" className="small" onClick={() => copyText(t.channel_key).then(() => setMsg("Key copied.")).catch((e) => setMsg(e.message))}>Copy</button>
                 </div>
               )}
               <div className="small faint" style={{ marginTop: 2 }}>

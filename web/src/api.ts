@@ -266,3 +266,29 @@ export function makeResolver(nodes: Node[]) {
     return pick.length === 1 ? pick[0] : null;
   };
 }
+
+
+/** Copies text to the clipboard. Works in browsers and in the Mac app, whose web view has no clipboard of its own. */
+export async function copyText(text: string): Promise<void> {
+  const mac = (window as any).webkit?.messageHandlers?.notoryxCopy;
+  if (mac) {
+    mac.postMessage(String(text));
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    // fall back to the old way below
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.setAttribute("readonly", "");
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("Couldn't copy. Select the text and press Cmd-C.");
+}
