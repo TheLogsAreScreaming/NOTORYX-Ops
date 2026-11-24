@@ -81,6 +81,13 @@ export default function RadioCard({ r, set, onSaved, onError }: {
     if (r.transport === "serial" && ports === null) findPorts();
   }, [r.transport, live?.state]);
 
+  // Swap a "Connecting…" note for the result once the radio answers.
+  useEffect(() => {
+    if (!note.startsWith("Connecting") || !live) return;
+    if (live.state === "connected") setNote(`Connected to ${live.name || "the radio"}.`);
+    else if (live.error) setNote(`Not connected yet: ${live.error}. Still trying.`);
+  }, [live?.state, live?.error, live?.name]);
+
   function connect(patch: Partial<Radio>, message: string) {
     setBusy(true);
     onError(null);

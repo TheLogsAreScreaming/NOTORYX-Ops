@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mt_templates (

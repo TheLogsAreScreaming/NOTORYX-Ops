@@ -5,6 +5,7 @@
 const API = "/api/addons/meshtastic";
 const $ = (id) => document.getElementById(id);
 let status = null;
+let pendingConnect = false;  // a Connect is waiting for the radio to answer
 let nodes = [];
 let current = null; // { num, name }
 let lastRead = null; // { section, values }
@@ -36,6 +37,19 @@ function ago(t) {
   if (s < 172800) return `${Math.round(s / 3600)} h`;
   return `${Math.round(s / 86400)} d`;
 }
+// Copies text in browsers and in the Mac app, whose web view has no clipboard of its own.
+async function copyText(text) {
+  const mac = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.notoryxCopy;
+  if (mac) { mac.postMessage(String(text)); return; }
+  try { await navigator.clipboard.writeText(text); return; } catch (_) { /* old way below */ }
+  const ta = document.createElement("textarea");
+  ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+  document.body.appendChild(ta); ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("Couldn't copy. Select the key and press Cmd-C.");
+}
+
 function say(el, msg, ok = true) { el.textContent = msg; el.className = `small ${ok ? "okmsg" : "err"}`; }
 
 // ---- status -----------------------------------------------------------------------
@@ -51,7 +65,9 @@ async function loadStatus() {
        <div style="margin-top:6px">Public key (add this under Security → Admin keys on nodes you manage):</div>
        <div class="row"><span class="mono">${esc(me.public_key || "not available")}</span>${me.public_key ? '<button id="copy-key">Copy</button>' : ""}</div>`
     : (r.error ? `<span class="err">${esc(r.error)}</span>` : "Not connected.");
-  if ($("copy-key")) $("copy-key").onclick = () => navigator.clipboard.writeText(me.public_key);
+  if ($("copy-key")) $("copy-key").onclick = () => copyText(me.public_key)
+    .then(() => { $("copy-key").textContent = "Copied"; setTimeout(() => { if ($("copy-key")) $("copy-key").textContent = "Copy"; }, 2000); })
+    .catch((e) => say($("radio-msg"), e.message, false));
   const s = status.settings;
   if (!$("transport").dataset.loaded) {
     $("transport").value = s.transport || "none";
@@ -66,6 +82,12 @@ async function loadStatus() {
     $("m-section").innerHTML = status.sections.map((x) => `<option>${esc(x)}</option>`).join("");
   }
   $("disconnect").hidden = r.transport === "none" || r.state === "off";
+  // Replace a "Connecting…" note once the radio answers (or fails), instead of leaving it stuck.
+  if (pendingConnect) {
+    if (r.state === "connected") { say($("radio-msg"), `Connected to ${me ? me.long_name || me.id : "the radio"}.`); pendingConnect = false; }
+    else if (r.error) { say($("radio-msg"), r.error, false); pendingConnect = false; }
+    else if (r.state === "off") pendingConnect = false;
+  }
   $("bridge-hint").textContent = `MeshCore channels on this station: ${status.meshcore_channels.join(", ") || "none"}.`;
   const b = status.bridge.stats;
   $("bridge-stats").textContent = `Sent to MeshCore ${b.to_meshcore} · to Meshtastic ${b.to_meshtastic} · held back by the limit ${b.dropped_rate} · failed ${b.dropped_error}` +
@@ -91,8 +113,9 @@ async function connectRadio(extra, message) {
     const body = { transport: $("transport").value, serial_port: $("serial_port").value, tcp_host: $("tcp_host").value, ble_address: $("ble_address").value, ...extra };
     await api("/settings", { method: "PUT", body });
     say($("radio-msg"), message || "Saved. Connecting…");
-    setTimeout(loadStatus, 2500);
-    setTimeout(loadStatus, 8000);
+    pendingConnect = body.transport !== "none";
+    // Check often until the radio answers; Bluetooth can take up to half a minute.
+    for (const ms of [1500, 4000, 8000, 15000, 30000]) setTimeout(() => loadStatus().catch(() => {}), ms);
   } catch (e) { say($("radio-msg"), e.message, false); }
 }
 
