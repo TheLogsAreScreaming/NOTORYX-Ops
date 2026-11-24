@@ -165,13 +165,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         let stamp = venvDir.appendingPathComponent(".installed-\(wheel.lastPathComponent)")
         if !FileManager.default.fileExists(atPath: stamp.path) {
-            setStatus("Setting up NOTORYX Ops. The first start takes about a minute…")
-            try? FileManager.default.removeItem(at: venvDir)
             let pip = venvDir.appendingPathComponent("bin/pip").path
-            guard run(python, ["-m", "venv", venvDir.path], log: log).status == 0,
-                  run(pip, ["install", "--quiet", "--disable-pip-version-check", wheel.path], log: log).status == 0
-            else {
-                return fail("Setting up the station failed. Details are in the log.", showLog: true)
+            let pipArgs = ["install", "--quiet", "--disable-pip-version-check", "--upgrade", wheel.path]
+            // An update upgrades the existing environment in place, so add-ons installed in it
+            // (such as Meshtastic) are kept. A fresh or broken environment is built from scratch.
+            var ready = false
+            if FileManager.default.isExecutableFile(atPath: pip) {
+                setStatus("Updating NOTORYX Ops…")
+                ready = run(pip, pipArgs, log: log).status == 0
+            }
+            if !ready {
+                setStatus("Setting up NOTORYX Ops. The first start takes about a minute…")
+                try? FileManager.default.removeItem(at: venvDir)
+                guard run(python, ["-m", "venv", venvDir.path], log: log).status == 0,
+                      run(pip, pipArgs, log: log).status == 0
+                else {
+                    return fail("Setting up the station failed. Details are in the log.", showLog: true)
+                }
+            }
+            // Forget older version stamps, then mark this one as installed.
+            for name in (try? FileManager.default.contentsOfDirectory(atPath: venvDir.path)) ?? []
+            where name.hasPrefix(".installed-") {
+                try? FileManager.default.removeItem(at: venvDir.appendingPathComponent(name))
             }
             FileManager.default.createFile(atPath: stamp.path, contents: nil)
             // A new version: drop cached pages so the dashboard can't show the old screens.
