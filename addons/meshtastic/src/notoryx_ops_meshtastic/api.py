@@ -14,6 +14,31 @@ from .admin import SECTIONS, AdminError, firmware_ok, redact
 from .bridge import parse_pairs
 from .link import TRANSPORTS
 
+MESHTASTIC_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
+
+
+async def scan_ble(timeout: float = 6) -> list[dict[str, Any]]:
+    """Nearby Bluetooth Meshtastic radios, strongest first."""
+    from bleak import BleakScanner
+
+    found = await BleakScanner.discover(timeout=timeout, return_adv=True)
+    out = []
+    for dev, adv in found.values():
+        name = adv.local_name or dev.name or ""
+        uuids = [u.lower() for u in (adv.service_uuids or [])]
+        if MESHTASTIC_UUID in uuids or "meshtastic" in name.lower():
+            out.append({"address": dev.address, "name": name or dev.address, "rssi": adv.rssi})
+    return sorted(out, key=lambda d: -(d["rssi"] or -999))
+
+
+def usb_ports() -> list[dict[str, Any]]:
+    """Serial ports that could be a radio."""
+    from serial.tools import list_ports
+
+    return [{"address": p.device, "name": " · ".join(x for x in (p.description, p.manufacturer) if x and x != "n/a") or p.device}
+            for p in list_ports.comports()
+            if not any(x in p.device for x in ("Bluetooth-Incoming", "BLTH", "debug-console"))]
+
 
 class SettingsIn(BaseModel):
     transport: str | None = None
@@ -123,6 +148,15 @@ def router(addon) -> APIRouter:
             addon.restart_link()
         addon.station.store.audit("meshtastic_settings", {k: v for k, v in new.items()})
         return {"ok": True}
+
+    @r.get("/radios")
+    async def radios(request: Request, kind: str = "ble"):
+        """Meshtastic radios the station can connect to: nearby Bluetooth ones or USB ports. Listening only."""
+        need(request, "admin")
+        try:
+            return await (scan_ble() if kind == "ble" else asyncio.to_thread(usb_ports))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(503, f"Looking for radios failed: {exc}. Check that Bluetooth is on and allowed for NOTORYX Ops.") from exc
 
     @r.get("/nodes")
     def nodes(request: Request):

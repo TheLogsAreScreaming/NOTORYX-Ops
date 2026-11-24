@@ -34,6 +34,9 @@
   .tablewrap { overflow-x:auto; max-height:420px; overflow-y:auto; }
   label.f { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--text2); }
   textarea { width:100%; min-height:70px; }
+.radio-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; max-height: 260px; overflow-y: auto; }
+.radio-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line, #333); border-radius: 10px; }
+.radio-row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 </style>
 <script>
   // Follow the look picked on the NOTORYX Ops dashboard (same origin, saved by the dashboard).
@@ -76,7 +79,8 @@
       <label class="f" id="f-tcp">Address <input id="tcp_host" placeholder="meshtastic.local"></label>
       <label class="f" id="f-ble">Bluetooth name or address <input id="ble_address"></label>
     </div>
-    <div class="row" style="margin-top:8px"><button class="primary" id="save-radio">Save and connect</button><span id="radio-msg" class="small"></span></div>
+    <div class="row" style="margin-top:8px"><button id="find-radios" hidden>Find radios</button><button class="primary" id="save-radio">Save and connect</button><button id="disconnect" hidden>Disconnect</button><span id="radio-msg" class="small"></span></div>
+    <div id="radio-list" class="radio-list" hidden></div>
   </section>
 
   <section class="card">

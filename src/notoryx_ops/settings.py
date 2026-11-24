@@ -390,16 +390,20 @@ def serial_ports() -> list[dict[str, str]]:
     return out
 
 
-async def ble_devices(timeout: float = 6) -> list[dict[str, Any]]:
-    """Nearby Bluetooth devices that look like MeshCore radios. Listening only, nothing is sent."""
+MESHCORE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"  # Nordic UART service, used by MeshCore companions
+MESHTASTIC_UUID = "6ba1b218-15a8-461f-9fa8-5dcae273eafd"
+
+
+async def ble_devices(timeout: float = 6, kind: str = "meshcore") -> list[dict[str, Any]]:
+    """Nearby Bluetooth radios of one kind ("meshcore" or "meshtastic"). Listening only, nothing is sent."""
     from bleak import BleakScanner
 
+    uuid, word = (MESHTASTIC_UUID, "meshtastic") if kind == "meshtastic" else (MESHCORE_UUID, "meshcore")
     found = await BleakScanner.discover(timeout=timeout, return_adv=True)
-    nus = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
     out = []
     for dev, adv in found.values():
         name = adv.local_name or dev.name or ""
         uuids = [u.lower() for u in (adv.service_uuids or [])]
-        if nus in uuids or "meshcore" in name.lower():
+        if uuid in uuids or word in name.lower():
             out.append({"address": dev.address, "name": name or dev.address, "rssi": adv.rssi})
     return sorted(out, key=lambda d: -(d["rssi"] or -999))
