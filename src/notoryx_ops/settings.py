@@ -55,6 +55,7 @@ def public_view(cfg: Config) -> dict[str, Any]:
              "tls": m.tls, "topics": list(m.topics)}
             for m in cfg.mqtt
         ],
+        "share": {"enabled": cfg.share_enabled, "port": cfg.share_port},
         "terrain": {k: getattr(cfg, a) for k, a in TERRAIN_FIELDS.items()},
         "integrations": {
             "metrics_token_set": bool(cfg.metrics_token), "public_map": cfg.public_map, "public_title": cfg.public_title,
@@ -166,6 +167,12 @@ def apply_changes(cfg: Config, data: dict[str, Any]) -> list[str]:
             new["webhook_secret"] = _text(al["webhook_secret"], "Webhook secret", 200)
         if al.get("radio_lost_minutes") is not None:
             new["radio_lost_minutes"] = _num(al["radio_lost_minutes"], 0, 1440, "Radio lost after minutes")
+    sh = data.get("share") or {}
+    if sh:
+        if "enabled" in sh:
+            new["share_enabled"] = bool(sh["enabled"])
+        if "port" in sh:
+            new["share_port"] = _int(sh["port"], 1024, 65535, "Sharing port")
     tr = data.get("terrain") or {}
     if tr:
         src = tr.get("source", cfg.terrain_source)
@@ -306,6 +313,11 @@ def to_toml(cfg: Config) -> str:
         f"webhook_url = {_q(cfg.webhook_url)}",
         f"webhook_secret = {_q(cfg.webhook_secret)}",
         f"radio_lost_minutes = {float(cfg.radio_lost_minutes)}",
+        "",
+        "[share]",
+        f"enabled = {str(bool(cfg.share_enabled)).lower()}",
+        f"host = {_q(cfg.share_host)}",
+        f"port = {int(cfg.share_port)}",
         "",
         "[terrain]",
         f"source = {_q(cfg.terrain_source)}",

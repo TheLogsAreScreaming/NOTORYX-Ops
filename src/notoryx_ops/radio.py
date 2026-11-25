@@ -35,6 +35,8 @@ class RadioLink:
         self._health: dict[str, Any] = {}
         self._health_at = 0.0
         self._task: asyncio.Task | None = None
+        self.shared = False                      # an app is using the radio through the station
+        self._tap = None                         # where a shared app gets the radio's frames
         self._stop = asyncio.Event()
 
     @property
@@ -104,6 +106,7 @@ class RadioLink:
                 async def on_disconnect(_event):
                     self.state = "disconnected"
 
+                self._install_tap(mc)
                 mc.subscribe(EventType.RX_LOG_DATA, on_rx)
                 mc.subscribe(EventType.DISCONNECTED, on_disconnect)
                 await mc.ensure_contacts()
@@ -138,8 +141,8 @@ class RadioLink:
         """Battery, firmware, uptime and radio stats of the station radio, asked at most once a minute."""
         base = {"connected": self.connected, "reconnects": self.reconnects, "connected_at": self.connected_at,
                 "disconnected_since": self.disconnected_since, "error": self.error}
-        if not self.connected:
-            return {**base, **{k: v for k, v in self._health.items() if k in ("model", "firmware")}}
+        if not self.connected or self.shared:
+            return {**base, "shared": self.shared, **{k: v for k, v in self._health.items() if k != "connected"}}
         if time.time() - self._health_at < max_age:
             return {**self._health, **base}
         mc, out = self.mc, {}
@@ -169,9 +172,53 @@ class RadioLink:
         return {**out, **base}
 
     # ---- repeater operations ----------------------------------------------
+    # ---- sharing with an app ----------------------------------------------
+    def _install_tap(self, mc) -> None:
+        """Pass every frame the radio sends to a shared app as well as to the station."""
+        link = self
+        inner = mc.connection_manager.connection.reader
+
+        class Tap:
+            def __getattr__(self, name):
+                return getattr(inner, name)
+
+            async def handle_rx(self, data):
+                if link._tap is not None:
+                    try:
+                        link._tap(bytes(data))
+                    except Exception:  # noqa: BLE001 - a broken app connection must not stop the station
+                        log.exception("radio share tap failed")
+                return await inner.handle_rx(data)
+
+        mc.connection_manager.set_reader(Tap())
+
+    async def begin_share(self, tap) -> None:
+        """An app takes over: the station stops fetching messages and asking the radio anything."""
+        self.shared, self._tap = True, tap
+        if self.mc:
+            try:
+                await self.mc.stop_auto_message_fetching()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def end_share(self) -> None:
+        self.shared, self._tap = False, None
+        if self.mc and self.connected:
+            try:
+                await self.mc.start_auto_message_fetching()
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def share_send(self, frame: bytes) -> None:
+        if not self.mc:
+            raise ConnectionError("the station radio isn't connected")
+        await self.mc.connection_manager.send(frame)
+
     def _require(self):
         if not self.connected:
             raise RadioError("The station radio isn't connected.")
+        if self.shared:
+            raise RadioError("An app is using the station radio through radio sharing right now. Try again when it disconnects.")
         return self.mc
 
     async def contact(self, public_key: str) -> dict[str, Any]:

@@ -133,6 +133,7 @@ class DemoRadio:
     error = None
 
     enabled = True
+    shared = False
     disconnected_since = None
     reconnects = 0
 
