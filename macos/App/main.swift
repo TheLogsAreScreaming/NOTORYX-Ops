@@ -85,6 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var spinner: NSProgressIndicator!
     var station: Process?
     var port = 8484
+    /// Set by Stop Station so any exit code counts as a clean stop.
+    var stopRequested = false
     var quitting = false
 
     func applicationDidFinishLaunching(_ note: Notification) {
@@ -228,7 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             p.standardError = log
             p.terminationHandler = { [weak self] proc in
                 guard let self = self, !self.quitting else { return }
-                if proc.terminationStatus == 0 {
+                if self.stopRequested || proc.terminationStatus == 0 {
+                    self.stopRequested = false
                     self.stopped()  // Stop station on the Station page, or a clean exit
                 } else if proc.terminationStatus == 75 {
                     self.restartStation(nil)  // the dashboard asked for a restart, e.g. after adding an add-on
@@ -422,6 +425,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if let u = URL(string: "http://127.0.0.1:\(port)/settings") { web.load(URLRequest(url: u)) }
     }
     @objc func showLog(_ sender: Any?) { NSWorkspace.shared.activateFileViewerSelecting([logURL]) }
+    @objc func checkForUpdates(_ sender: Any?) {
+        window.makeKeyAndOrderFront(nil)
+        if let u = URL(string: "http://127.0.0.1:\(port)/settings#set-updates") { web.load(URLRequest(url: u)) }
+    }
+    @objc func stopStation(_ sender: Any?) {
+        guard let p = station, p.isRunning else { stopped(); return }
+        let a = NSAlert()
+        a.messageText = "Stop the station?"
+        a.informativeText = "Packets and fleet polls stop until you start it again."
+        a.addButton(withTitle: "Stop Station")
+        a.addButton(withTitle: "Cancel")
+        if a.runModal() == .alertFirstButtonReturn {
+            stopRequested = true
+            p.interrupt()
+        }
+    }
+    @objc func openLink(_ sender: NSMenuItem) {
+        if let s = sender.representedObject as? String, let u = URL(string: s) { NSWorkspace.shared.open(u) }
+    }
     @objc func showWindow(_ sender: Any?) { window.makeKeyAndOrderFront(nil) }
     @objc func zoomIn(_ sender: Any?) { web.pageZoom = min(web.pageZoom + 0.1, 2) }
     @objc func zoomOut(_ sender: Any?) { web.pageZoom = max(web.pageZoom - 0.1, 0.6) }
@@ -451,10 +473,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         sub(appName, [
             item("About \(appName)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), "", [], target: NSApp),
             .separator(),
+            item("Check for Updates…", #selector(checkForUpdates(_:)), target: self),
+            .separator(),
             item("Settings…", #selector(editSettings(_:)), ",", target: self),
             item("Show Settings File in Finder", #selector(showSettings(_:)), target: self),
-            item("Show Station Log", #selector(showLog(_:)), target: self),
-            item("Start or Restart Station", #selector(restartStation(_:)), target: self),
+            .separator(),
+            item("Start or Restart Station", #selector(restartStation(_:)), "r", [.command, .shift], target: self),
+            item("Stop Station…", #selector(stopStation(_:)), target: self),
             .separator(),
             item("Hide \(appName)", #selector(NSApplication.hide(_:)), "h", target: NSApp),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option], target: NSApp),
@@ -471,16 +496,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             item("Paste", #selector(NSText.paste(_:)), "v"),
             item("Select All", #selector(NSText.selectAll(_:)), "a"),
         ])
-        let pages: [(String, String, String)] = [
-            ("Live Map", "/", "1"), ("Packets", "/packets", "2"), ("Channels", "/channels", "3"),
-            ("My Fleet", "/fleet", "4"), ("Observers", "/observers", "5"), ("Coverage", "/coverage", "6"),
-            ("Analytics", "/analytics", "7"), ("Alerts", "/alerts", "8"), ("Station", "/station", "9"),
+        // Same order and groups as the dashboard sidebar.
+        let pages: [[(String, String, String)]] = [
+            [("Live Map", "/", "1"), ("Packets", "/packets", "2"), ("Nodes", "/nodes", "3"), ("Channels", "/channels", "4")],
+            [("Observers", "/observers", "5"), ("Coverage", "/coverage", "6"), ("Analytics", "/analytics", "7"), ("Field Work", "/field", "")],
+            [("My Fleet", "/fleet", "8"), ("Alerts", "/alerts", "9")],
+            [("Station", "/station", ""), ("Settings", "/settings", "")],
         ]
-        sub("Go", pages.map { p in
-            let i = item(p.0, #selector(go(_:)), p.2, target: self)
-            i.representedObject = p.1
-            return i
-        })
+        var goItems: [NSMenuItem] = []
+        for (n, group) in pages.enumerated() {
+            if n > 0 { goItems.append(.separator()) }
+            for p in group {
+                let i = item(p.0, #selector(go(_:)), p.2, target: self)
+                i.representedObject = p.1
+                goItems.append(i)
+            }
+        }
+        sub("Go", goItems)
         sub("View", [
             item("Reload", #selector(reload(_:)), "r", target: self),
             .separator(),
@@ -498,8 +530,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             item("Dashboard", #selector(showWindow(_:)), "0", [.command, .option], target: self),
         ]
         sub("Window", windowMenu)
+        let windowsSubmenu = main.items.last?.submenu
+        func link(_ title: String, _ url: String) -> NSMenuItem {
+            let i = item(title, #selector(openLink(_:)), target: self)
+            i.representedObject = url
+            return i
+        }
+        sub("Help", [
+            link("\(appName) User Guide", "https://github.com/TheLogsAreScreaming/NOTORYX-Ops/blob/main/docs/USER_GUIDE.md"),
+            link("Release Notes", "https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases"),
+            .separator(),
+            item("Show Station Log", #selector(showLog(_:)), target: self),
+        ])
         NSApp.mainMenu = main
-        NSApp.windowsMenu = main.items.last?.submenu
+        NSApp.windowsMenu = windowsSubmenu
+        NSApp.helpMenu = main.items.last?.submenu
     }
 }
 

@@ -103,6 +103,9 @@ input:focus-visible, select:focus-visible, button:focus-visible, textarea:focus-
   box-shadow: inset 2px 0 0 var(--accent);
 }
 .side .count { margin-left: auto; font-size: 12px; }
+.navgroup { display: flex; flex-direction: column; gap: 2px; }
+.navgroup + .navgroup { margin-top: 10px; }
+.navhead { font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); padding: 0 10px 3px; }
 .side .foot { margin-top: auto; font-size: 12px; color: var(--text-3); padding: 10px 8px 0; }
 .main { overflow-y: auto; padding: 16px 20px 32px; min-width: 0; }
 .main.full { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -193,7 +196,11 @@ tr.sel td { background: var(--accent-bg); }
   .side .foot, .brand span { display: none; }
   .brand { padding: 4px 8px; }
   .side a { white-space: nowrap; }
+  .navgroup { flex-direction: row; }
+  .navgroup + .navgroup { margin-top: 0; margin-left: 6px; }
+  .navhead { display: none; }
   .main { padding: 12px 16px 24px; }
+  .settop { top: -12px; margin: -12px -16px 12px; padding: 12px 16px 8px; }
   .feed { display: none; }
   .replay { right: 12px; }
 }
@@ -225,11 +232,28 @@ tr.sel td { background: var(--accent-bg); }
 
 /* Forms */
 .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* On/off fields: the box sits before its label on one line, not stretched across the card. */
+.field:has(> input[type="checkbox"]) { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 8px; align-self: end; padding: 6px 0; cursor: pointer; }
+.field:has(> input[type="checkbox"]) > input[type="checkbox"] { order: -1; }
+.field:has(> input[type="checkbox"]) > .flabel { font-size: 13px; color: var(--text); }
+.field:has(> input[type="checkbox"]) > .fhint { flex-basis: 100%; }
+input[type="checkbox"] { width: 16px; height: 16px; flex: none; padding: 0; margin: 0; accent-color: var(--accent); cursor: pointer; }
+select { text-overflow: ellipsis; }
+/* Settings: a bar that stays in view with Save, unsaved state and section links. */
+.settop { position: sticky; top: -16px; z-index: 5; margin: -16px -20px 14px; padding: 16px 20px 10px; background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.settop .top { margin-bottom: 8px; }
+.settop .note { margin-top: 8px; }
+.jump { display: flex; gap: 6px; flex-wrap: wrap; }
+.jump button { border-radius: 999px; padding: 3px 10px; }
+.setsec { scroll-margin-top: 120px; margin-bottom: 8px; }
+.setsec .card { scroll-margin-top: 120px; }
+.sechead { font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-3); margin: 18px 2px 10px; }
+.setsec:first-of-type .sechead { margin-top: 4px; }
 .flabel { font-size: 12px; color: var(--text-2); font-weight: 500; }
 .fhint { font-size: 11px; color: var(--text-3); }
 .formgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
 .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 10px; padding: 3px; gap: 3px; flex-wrap: wrap; }
-.seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 7px; white-space: nowrap; }
 .seg button.on { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--accent-2))); color: var(--on-accent); font-weight: 600; }
 .picklist { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
 .picklist > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: var(--panel-2); }

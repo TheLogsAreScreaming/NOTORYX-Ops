@@ -89,7 +89,7 @@ export default function UpdatesCard() {
   }
 
   return (
-    <div className="card">
+    <div className="card" id="set-updates">
       <h2>Updates and add-ons</h2>
       <div className="small muted" style={{ marginBottom: 10 }}>
         From the NOTORYX Ops releases page on GitHub. Every download is checked against the release's checksums
