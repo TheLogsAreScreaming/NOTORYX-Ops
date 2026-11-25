@@ -1,13 +1,12 @@
 /** Range rings: step sizing and ring/spoke geometry around a point. Pure functions, no map code. */
 
-import { MILE_M, type Units } from "./units";
+export type Units = "metric" | "imperial";
 
-export type { Units };
-
-/** Default when a caller gives no units. */
+/** The dashboard has no unit setting yet, so rings are metric. */
 export const UNITS: Units = "metric";
 
 const EARTH_M = 6371000;
+const MILE_M = 1609.344;
 export const RING_COUNT = 4;
 /** Compass tags sit this far out, as a share of the outer ring. */
 export const CARDINAL_AT = 1.08;

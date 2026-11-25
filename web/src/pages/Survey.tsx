@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { fmtDistance, useUnits } from "../units";
 
 /** Phone-sized field survey. Every spot is saved on this device first and uploaded when the
  *  station can be reached, so it works with no signal. */
@@ -41,7 +40,6 @@ function id() {
 }
 
 export default function Survey() {
-  const units = useUnits();
   const [queue, setQueue] = useState<Point[]>(() => load(KEY));
   const [sent, setSent] = useState<number>(() => load(DONE_KEY).length);
   const [fix, setFix] = useState<GeolocationPosition | null>(null);
@@ -149,7 +147,7 @@ export default function Survey() {
         {fix ? (
           <div className="mono">
             {fix.coords.latitude.toFixed(5)}, {fix.coords.longitude.toFixed(5)}
-            <span className={`pill ${acc && acc <= 30 ? "ok" : "warn"}`} style={{ marginLeft: 8 }}>±{fmtDistance(acc || 0, units)}</span>
+            <span className={`pill ${acc && acc <= 30 ? "ok" : "warn"}`} style={{ marginLeft: 8 }}>±{Math.round(acc || 0)} m</span>
           </div>
         ) : (
           <div className="muted">{gpsErr || "Waiting for a GPS fix…"}</div>

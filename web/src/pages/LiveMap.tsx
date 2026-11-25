@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { Map as MlMap, GeoJSONSource } from "maplibre-gl";
 import MapView, { fitTo, onGlobe } from "../components/MapView";
-import { getUnits, useUnits } from "../units";
 import { currentTheme, nodeColor, onTheme, routeColor, snrColor } from "../themes";
 import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, duration, ignoreNode, knownTime, makeResolver, useApi, useLive } from "../api";
-import { CARDINAL_AT, Rect, distanceM, freeRect, inRect, inset, pullInside, ringFeatures, ringStep } from "../rings";
+import { CARDINAL_AT, Rect, UNITS, distanceM, freeRect, inRect, inset, pullInside, ringFeatures, ringStep } from "../rings";
 
 const ROUTE_MS = 2600;
 const SPEEDS = [1, 10, 60, 300];
@@ -79,7 +78,6 @@ export default function LiveMap() {
   const [ready, setReady] = useState(false);
   const [, setLook] = useState(0);
   useEffect(() => onTheme(() => setLook((x) => x + 1)), []);
-  const units = useUnits();
   const map = useRef<MlMap | null>(null);
   const routes = useRef<Route[]>([]);
   const pings = useRef<{ at: [number, number]; born: number; color: string }[]>([]);
@@ -246,7 +244,7 @@ export default function LiveMap() {
         const n = m.unproject([cx, cy - half]);
         const e = m.unproject([cx + half, cy]);
         const span = Math.min(distanceM(c.lat, c.lng, n.lat, n.lng), distanceM(c.lat, c.lng, e.lat, e.lng)) / CARDINAL_AT;
-        const fc = ringFeatures(at[1], at[0], ringStep(span, getUnits()), getUnits());
+        const fc = ringFeatures(at[1], at[0], ringStep(span, UNITS), UNITS);
         const p = m.project(at);
         const from: [number, number] = [p.x, p.y];
         const kept: GeoJSON.Feature[] = [];
@@ -285,7 +283,7 @@ export default function LiveMap() {
     saveRings(rings);
     if (ready && map.current) drawRings(map.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rings, home?.[0], home?.[1], ready, units]);
+  }, [rings, home?.[0], home?.[1], ready]);
 
   useEffect(() => {
     if (ready && map.current) drawStatic(map.current);

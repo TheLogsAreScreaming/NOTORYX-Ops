@@ -5,7 +5,6 @@ import Accounts from "../components/Accounts";
 import RadioCard from "../components/RadioCard";
 import UpdatesCard from "../components/UpdatesCard";
 import { useMe } from "../auth";
-import { Units, fmtDistance, heightIn, heightOut, heightUnit, setUnits, useUnits } from "../units";
 
 type S = any;
 
@@ -66,7 +65,6 @@ function IgnoredNodes({ onError }: { onError: (m: string) => void }) {
 const CHANNEL_HELP = "Public, a #hashtag channel, or a private channel as Name=32 hex digits.";
 
 export default function Settings() {
-  const units = useUnits();
   const [s, setS] = useState<S | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -149,14 +147,8 @@ export default function Settings() {
       )}
 
       <div className="card">
-        <h2>Look and units</h2>
-        <div className="small muted" style={{ marginBottom: 10 }}>Changes right away and is saved in this browser.</div>
-        <div className="row" role="radiogroup" aria-label="Distance units" style={{ marginBottom: 12 }}>
-          <span className="small muted">Distances</span>
-          {([["metric", "Kilometres and metres"], ["imperial", "Miles and feet"]] as [Units, string][]).map(([u, l]) => (
-            <button key={u} role="radio" aria-checked={units === u} className={units === u ? "primary" : ""} onClick={() => setUnits(u)}>{l}</button>
-          ))}
-        </div>
+        <h2>Look</h2>
+        <div className="small muted" style={{ marginBottom: 10 }}>Changes right away and is saved on this computer.</div>
         <LookGallery />
       </div>
 
@@ -231,8 +223,8 @@ export default function Settings() {
             <Field label="Antenna gain (dBi)"><input type="number" step="0.5" value={s.terrain.antenna_gain_dbi} onChange={(e) => set("terrain.antenna_gain_dbi", Number(e.target.value))} /></Field>
             <Field label="Cable loss (dB)"><input type="number" step="0.5" value={s.terrain.cable_loss_db} onChange={(e) => set("terrain.cable_loss_db", Number(e.target.value))} /></Field>
             <Field label="Receiver noise figure (dB)"><input type="number" step="0.5" value={s.terrain.noise_figure_db} onChange={(e) => set("terrain.noise_figure_db", Number(e.target.value))} /></Field>
-            <Field label={`Repeater antenna height (${heightUnit(units)})`}><input type="number" step={units === "imperial" ? 1 : 0.5} value={heightIn(s.terrain.repeater_height_m, units)} onChange={(e) => set("terrain.repeater_height_m", heightOut(Number(e.target.value), units))} /></Field>
-            <Field label={`Handheld antenna height (${heightUnit(units)})`}><input type="number" step={units === "imperial" ? 1 : 0.5} value={heightIn(s.terrain.client_height_m, units)} onChange={(e) => set("terrain.client_height_m", heightOut(Number(e.target.value), units))} /></Field>
+            <Field label="Repeater antenna height (m)"><input type="number" step="0.5" value={s.terrain.repeater_height_m} onChange={(e) => set("terrain.repeater_height_m", Number(e.target.value))} /></Field>
+            <Field label="Handheld antenna height (m)"><input type="number" step="0.5" value={s.terrain.client_height_m} onChange={(e) => set("terrain.client_height_m", Number(e.target.value))} /></Field>
             <Field label="Calibrate from measured links" hint="Shifts predictions by the median error on links the station has heard.">
               <input type="checkbox" checked={!!s.terrain.use_calibration} onChange={(e) => set("terrain.use_calibration", e.target.checked)} />
             </Field>
@@ -265,7 +257,10 @@ export default function Settings() {
             <Field label="Title"><input value={s.integrations.public_title} placeholder={s.station.name} onChange={(e) => set("integrations.public_title", e.target.value)} /></Field>
             <Field label="Position detail">
               <select value={s.integrations.public_precision} onChange={(e) => set("integrations.public_precision", Number(e.target.value))}>
-                {[10000, 1000, 100, 10].map((m, i) => <option key={m} value={i + 1}>About {fmtDistance(m, units)}</option>)}
+                <option value={1}>About 10 km</option>
+                <option value={2}>About 1 km</option>
+                <option value={3}>About 100 m</option>
+                <option value={4}>About 10 m</option>
               </select>
             </Field>
             <Field label="Show companions too"><input type="checkbox" checked={!!s.integrations.public_show_companions} onChange={(e) => set("integrations.public_show_companions", e.target.checked)} /></Field>
