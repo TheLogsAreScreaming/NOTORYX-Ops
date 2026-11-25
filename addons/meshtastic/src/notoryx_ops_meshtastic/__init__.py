@@ -14,12 +14,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
 from pathlib import Path
 from typing import Any
 
-__version__ = "0.1.4"
+log = logging.getLogger(__name__)
+
+__version__ = "0.1.5"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mt_templates (
@@ -29,6 +32,23 @@ CREATE TABLE IF NOT EXISTS mt_templates (
   fields TEXT NOT NULL,
   created_at REAL NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS mt_messages (
+  id INTEGER PRIMARY KEY,
+  received_at REAL NOT NULL,
+  channel INTEGER NOT NULL,
+  from_num INTEGER,
+  from_id TEXT NOT NULL,
+  from_name TEXT,
+  to_num INTEGER,
+  text TEXT NOT NULL,
+  hops INTEGER,
+  snr REAL,
+  rssi REAL,
+  sent INTEGER NOT NULL DEFAULT 0,
+  packet_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS mt_messages_time ON mt_messages(channel, received_at);
 """
 
 
@@ -86,7 +106,36 @@ class MeshtasticAddon:
         self.router = router(self)
 
     def _on_text(self, packet: dict[str, Any]) -> None:
+        try:
+            self.keep_message(packet)
+        except Exception:  # noqa: BLE001 - never lose the bridge over a storage problem
+            log.exception("couldn't store a Meshtastic message")
         self.bridge.on_meshtastic_text(packet)
+
+    def keep_message(self, packet: dict[str, Any]) -> None:
+        """Store a received channel message (not direct messages) for the Channels page."""
+        text = ((packet.get("decoded") or {}).get("text") or "").strip()
+        to = packet.get("to")
+        if not text or to not in (None, 0xFFFFFFFF, "^all"):
+            return
+        frm = packet.get("from")
+        node = (self.link.iface.nodesByNum or {}).get(frm, {}) if self.link.iface is not None and frm is not None else {}
+        user = node.get("user", {}) if isinstance(node, dict) else {}
+        hops = None
+        if packet.get("hopStart") is not None and packet.get("hopLimit") is not None:
+            hops = int(packet["hopStart"]) - int(packet["hopLimit"])
+        self.add_message(channel=int(packet.get("channel") or 0), from_num=frm,
+                         from_id=packet.get("fromId") or (f"!{frm:08x}" if isinstance(frm, int) else "?"),
+                         from_name=user.get("longName"), to_num=to if isinstance(to, int) else None, text=text,
+                         hops=hops, snr=packet.get("rxSnr"), rssi=packet.get("rxRssi"), packet_id=packet.get("id"))
+
+    def add_message(self, sent: bool = False, **row: Any) -> None:
+        row = {"received_at": time.time(), "sent": int(sent), **row}
+        cols = ", ".join(row)
+        self.store.x(f"INSERT INTO mt_messages({cols}) VALUES ({', '.join('?' * len(row))})", tuple(row.values()))
+        keep = time.time() - 86400 * max(1, int(getattr(self.station.cfg, "packet_retention_days", 14)))
+        self.store.x("DELETE FROM mt_messages WHERE received_at < ?", (keep,))
+        self.station.hub.publish({"type": "mt_message", "channel": row["channel"]})
 
     def start(self) -> None:
         self.link.start()

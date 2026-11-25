@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ago, api, clock, useApi, useLive } from "../api";
 import { decodeMessage, encode, isSarneg, loadKeys, parseKeys, SARNEG_MARKER, saveKeys, wordFor, type SarnegKeys } from "../sarneg";
 import { useMe } from "../auth";
+import { MeshTabs, MeshtasticChannels, useMeshTab } from "../components/Meshtastic";
 
 type Msg = { id?: number; channel: string; sender: string | null; text: string; received_at: number; hops: number };
 
@@ -11,6 +12,7 @@ export default function Channels() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const channel = sel ?? data?.channels?.[0]?.name ?? null;
   const [keys, setKeys] = useState<SarnegKeys | null>(() => loadKeys());
+  const [mesh, setMesh, hasMt] = useMeshTab();
 
   useEffect(() => {
     if (!channel) return;
@@ -25,8 +27,12 @@ export default function Channels() {
     <>
       <div className="top">
         <h1>Channels</h1>
-        <span className="muted small">Group messages for channels whose keys are in the station settings.</span>
+        {hasMt && <MeshTabs mesh={mesh} onChange={setMesh} />}
+        <span className="muted small">
+          {mesh === "meshtastic" ? "Channels on the station's Meshtastic radio." : "Group messages for channels whose keys are in the station settings."}
+        </span>
       </div>
+      {mesh === "meshtastic" ? <MeshtasticChannels /> : (
       <div className="grid2" style={{ gridTemplateColumns: "minmax(200px, 260px) minmax(0, 1fr)" }}>
         <div>
           <div className="card" style={{ padding: 6 }}>
@@ -82,6 +88,7 @@ export default function Channels() {
           {channel && <Compose channel={channel} keys={keys} />}
         </div>
       </div>
+      )}
     </>
   );
 }
