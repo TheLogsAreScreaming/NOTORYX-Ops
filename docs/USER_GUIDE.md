@@ -66,7 +66,7 @@ Restart the station after editing the file by hand.
 
 ## Airtime
 
-Every fleet request goes over the air. By default each repeater is polled every 30 minutes with 20 seconds between repeaters. A poll is a login plus a status request; firmware is read once a day and neighbours every 6 hours. Raise `poll_minutes` on a busy mesh.
+Every fleet request goes over the air. By default each repeater is polled every 30 minutes with 20 seconds between repeaters. A poll is a login plus a status request (asked once more if the first reply never comes); firmware is read once a day and neighbours every 6 hours. Raise `poll_minutes` on a busy mesh.
 
 ## Security
 
