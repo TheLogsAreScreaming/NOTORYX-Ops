@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -49,6 +50,14 @@ class SettingsIn(BaseModel):
     bridge_enabled: bool | None = None
     bridge_pairs: list[str] | None = Field(default=None, max_length=8)
     bridge_per_minute: int | None = Field(default=None, ge=1, le=30)
+
+
+MAX_TEXT = 200  # bytes
+
+
+class SendIn(BaseModel):
+    channel: int = Field(ge=0, le=7)
+    text: str = Field(min_length=1, max_length=400)
 
 
 class ChangeIn(BaseModel):
@@ -166,7 +175,44 @@ def router(addon) -> APIRouter:
     @r.get("/channels")
     def channels(request: Request):
         need(request, "viewer")
-        return addon.link.channels()
+        counts = {row["channel"]: row["n"] for row in addon.store.q("SELECT channel, COUNT(*) n FROM mt_messages GROUP BY channel")}
+        return [{**c, "messages": counts.get(c["index"], 0)} for c in addon.link.channels()]
+
+    @r.get("/messages")
+    def messages(request: Request, channel: int = 0, limit: int = 200):
+        need(request, "viewer")
+        return addon.store.q("SELECT * FROM mt_messages WHERE channel = ? ORDER BY received_at DESC LIMIT ?",
+                             (channel, max(1, min(limit, 1000))))
+
+    sent_times: list[float] = []
+
+    @r.post("/send")
+    async def send(body: SendIn, request: Request):
+        """Send a channel message through the station's Meshtastic radio."""
+        need(request, "operator")
+        text = " ".join(body.text.split())
+        if not text:
+            raise HTTPException(400, "Type a message first.")
+        if len(text.encode()) > MAX_TEXT:
+            raise HTTPException(400, f"That's too long for one Meshtastic message. Keep it under {MAX_TEXT} bytes.")
+        if body.channel not in {c["index"] for c in addon.link.channels()}:
+            raise HTTPException(404, "The Meshtastic radio has no such channel.")
+        now = time.time()
+        sent_times[:] = [t for t in sent_times if now - t < 600]
+        if sent_times and now - sent_times[-1] < 3:
+            raise HTTPException(429, "Wait a few seconds between messages to save airtime.")
+        if len(sent_times) >= 20:
+            raise HTTPException(429, "That's 20 messages in 10 minutes. Wait a bit to save airtime.")
+        try:
+            await asyncio.to_thread(addon.link.send_text, text, body.channel)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(503, f"The Meshtastic radio didn't send it: {exc}") from exc
+        sent_times.append(now)
+        me = addon.link.my_node() or {}
+        addon.add_message(sent=True, channel=body.channel, from_num=addon.link.my_num(), from_id=me.get("id") or "station",
+                          from_name=me.get("long_name"), to_num=None, text=text, hops=0, snr=None, rssi=None, packet_id=None)
+        addon.station.store.audit("meshtastic_send", {"channel": body.channel, "length": len(text)})
+        return {"sent": True}
 
     # ---- remote admin (every call goes over the air) -----------------------------------
     @r.get("/nodes/{num}/metadata")

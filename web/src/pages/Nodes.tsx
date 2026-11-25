@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Node, ago, fmt, useApi } from "../api";
 import { IgnoreButton, StaleTag } from "../components/NodeTags";
+import { MeshTabs, MeshtasticNodes, useMeshTab } from "../components/Meshtastic";
 
 const TYPES = ["", "repeater", "room", "companion", "sensor"];
 
@@ -10,6 +11,8 @@ export default function Nodes() {
   const [q, setQ] = useState("");
   const [type, setType] = useState("");
   const [hideStale, setHideStale] = useState(false);
+  const [mesh, setMesh, hasMt] = useMeshTab();
+  const { data: mt } = useApi<any[]>(hasMt ? "/api/addons/meshtastic/nodes" : null, 60000);
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (data || []).filter(
@@ -26,19 +29,21 @@ export default function Nodes() {
     <>
       <div className="top">
         <h1>Nodes</h1>
+        {hasMt && <MeshTabs mesh={mesh} onChange={setMesh} counts={{ meshcore: data?.length, meshtastic: mt?.length }} />}
         <span className="muted small">
-          Every node this station has heard.{" "}
-          {staleAfter ? `Nodes not heard for ${staleAfter >= 24 ? `${staleAfter / 24} d` : `${staleAfter} h`} are marked stale (${staleCount} now).` : "Stale marking is off."}
+          {mesh === "meshtastic" ? "Every node the station's Meshtastic radio knows." : <>Every node this station has heard.{" "}
+          {staleAfter ? `Nodes not heard for ${staleAfter >= 24 ? `${staleAfter / 24} d` : `${staleAfter} h`} are marked stale (${staleCount} now).` : "Stale marking is off."}</>}
         </span>
         <span style={{ flex: 1 }} />
         <input placeholder="Name or key" aria-label="Search nodes" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="Node type">
+        {mesh === "meshcore" && <select value={type} onChange={(e) => setType(e.target.value)} aria-label="Node type">
           {TYPES.map((t) => (
             <option key={t} value={t}>{t || "All types"}</option>
           ))}
-        </select>
-        <label className="row small"><input type="checkbox" checked={hideStale} onChange={(e) => setHideStale(e.target.checked)} /> Hide stale</label>
+        </select>}
+        {mesh === "meshcore" && <label className="row small"><input type="checkbox" checked={hideStale} onChange={(e) => setHideStale(e.target.checked)} /> Hide stale</label>}
       </div>
+      {mesh === "meshtastic" ? <MeshtasticNodes query={q} /> : (<>
       {error && <div className="err">{error}</div>}
       <div className="card tablewrap" style={{ padding: 0 }}>
         <table>
@@ -71,6 +76,7 @@ export default function Nodes() {
         {data && rows.length === 0 && <div className="empty" style={{ padding: 16 }}>No nodes match.</div>}
       </div>
       <div className="small faint">Ignored nodes are listed under Settings, where you can show them again.</div>
+      </>)}
     </>
   );
 }

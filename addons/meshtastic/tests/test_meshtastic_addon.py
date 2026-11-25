@@ -268,3 +268,28 @@ def test_switching_the_connection_on_from_the_page(tmp_path):
         wait_connected(c)
         assert c.put("/api/addons/meshtastic/settings", json={"transport": "none"}).status_code == 200
         assert c.get("/api/addons/meshtastic/status").json()["radio"]["state"] == "off"
+
+
+def test_channel_messages_are_kept_and_can_be_sent(tmp_path):
+    fake = FakeIface()
+    cfg = Config(path=tmp_path / "c.toml", data_dir=tmp_path, demo=True, stagger_seconds=0)
+    cfg.addons = {"meshtastic": {"transport": "serial", "stagger_s": 0, "admin_timeout_s": 2}}
+    st = Station(cfg, addon_factories=[("meshtastic", lambda ctx: MeshtasticAddon(ctx, iface_factory=lambda s: fake))])
+    c = TestClient(create_app(cfg, st))
+    with c:
+        wait_connected(c)
+        (addon,) = st.addons
+        addon.keep_message({"from": RELAY_A, "fromId": f"!{RELAY_A:08x}", "to": 0xFFFFFFFF, "channel": 0,
+                            "hopStart": 3, "hopLimit": 1, "rxSnr": 5.5, "decoded": {"text": "hello there"}})
+        addon.keep_message({"from": RELAY_A, "to": ME, "channel": 0, "decoded": {"text": "a direct message"}})
+        msgs = c.get("/api/addons/meshtastic/messages?channel=0").json()
+        assert [m["text"] for m in msgs] == ["hello there"] and msgs[0]["hops"] == 2
+        assert c.get("/api/addons/meshtastic/channels").json()[0]["messages"] == 1
+        r = c.post("/api/addons/meshtastic/send", json={"channel": 0, "text": "from the station"})
+        assert r.status_code == 200, r.text
+        assert fake.sent_text[-1] == (0, "from the station")
+        assert c.post("/api/addons/meshtastic/send", json={"channel": 0, "text": "again"}).status_code == 429
+        assert c.post("/api/addons/meshtastic/send", json={"channel": 5, "text": "x"}).status_code == 404
+        assert c.post("/api/addons/meshtastic/send", json={"channel": 0, "text": "y" * 201}).status_code == 400
+        texts = [m["text"] for m in c.get("/api/addons/meshtastic/messages?channel=0").json()]
+        assert texts[0] == "from the station"
