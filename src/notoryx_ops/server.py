@@ -29,6 +29,12 @@ from .station import Station
 from .store import PKT_NOT_IGNORED
 
 RESTART_CODE = 75  # exit code that asks whoever runs the station to start it again
+MAX_CHANNEL_TEXT = 140  # bytes; the sender's name and ": " also go in the packet
+
+
+class SendIn(BaseModel):
+    channel: str = Field(min_length=1, max_length=40)
+    text: str = Field(min_length=1, max_length=300)
 
 
 def web_dir() -> Path | None:
@@ -389,6 +395,36 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             return st.store.q("SELECT * FROM messages WHERE channel = ? ORDER BY received_at DESC LIMIT ?",
                               (channel, min(limit, 2000)))
         return st.store.q("SELECT * FROM messages ORDER BY received_at DESC LIMIT ?", (min(limit, 2000),))
+
+    sent_times: list[float] = []
+
+    @app.post("/api/channels/send", dependencies=[Depends(operator)])
+    async def channel_send(body: SendIn, request: Request):
+        """Send a message on one of the station's channels through its radio."""
+        text = " ".join(body.text.split())
+        if not text:
+            raise HTTPException(400, "Type a message first.")
+        if len(text.encode()) > MAX_CHANNEL_TEXT:
+            raise HTTPException(400, f"That's too long for one MeshCore message. Keep it under {MAX_CHANNEL_TEXT} bytes.")
+        try:
+            ch = st.channel(body.channel)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        now = time.time()
+        sent_times[:] = [t for t in sent_times if now - t < 600]
+        if sent_times and now - sent_times[-1] < 3:
+            raise HTTPException(429, "Wait a few seconds between messages to save airtime.")
+        if len(sent_times) >= 20:
+            raise HTTPException(429, "That's 20 messages in 10 minutes. Wait a bit to save airtime.")
+        try:
+            await st.radio.send_channel(ch.key, text)
+        except RadioError as exc:
+            raise HTTPException(503, str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(503, f"The radio didn't send it: {exc}") from exc
+        sent_times.append(now)
+        st.store.audit("channel_send", {"channel": ch.name, "length": len(text), "by": who(request)})
+        return {"sent": True, "channel": ch.name, "at": now}
 
     @app.get("/api/channels")
     def channels():

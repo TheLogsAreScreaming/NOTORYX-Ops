@@ -88,3 +88,19 @@ def test_pages_are_never_served_stale(tmp_path):
         page = c.get("/settings")
         assert page.headers.get("cache-control") == "no-cache"
         assert "cache-control" not in c.get("/api/station").headers
+
+
+def test_send_channel_message(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from notoryx_ops import config
+    from notoryx_ops.server import create_app
+
+    cfg = config.load(tmp_path / "config.toml")
+    cfg.demo = True
+    with TestClient(create_app(cfg)) as c:
+        r = c.post("/api/channels/send", json={"channel": "Public", "text": "hello  mesh"})
+        assert r.status_code == 200, r.text
+        assert c.post("/api/channels/send", json={"channel": "Public", "text": "again"}).status_code == 429
+        assert c.post("/api/channels/send", json={"channel": "Public", "text": "x" * 141}).status_code == 400
+        assert c.post("/api/channels/send", json={"channel": "#nope", "text": "hi"}).status_code == 404
