@@ -217,13 +217,6 @@ def test_radio_lost_alert_raises_and_clears(tmp_path):
 
     from notoryx_ops import config
     from notoryx_ops.alerts import Alerts
-def test_watch_only_repeater_is_never_polled(tmp_path):
-    import json
-    import time
-
-    from notoryx_ops import config
-    from notoryx_ops.alerts import Alerts
-    from notoryx_ops.fleet import Fleet
     from notoryx_ops.ingest import Hub
     from notoryx_ops.store import Store
 
@@ -255,6 +248,19 @@ def test_radio_health_endpoint_in_demo(tmp_path):
     with TestClient(create_app(cfg)) as c:
         h = c.get("/api/station/radio").json()
         assert h["connected"] and h["battery_mv"] and h["firmware"]
+
+
+def test_watch_only_repeater_is_never_polled(tmp_path):
+    import json
+    import time
+
+    from notoryx_ops import config
+    from notoryx_ops.alerts import Alerts
+    from notoryx_ops.fleet import Fleet
+    from notoryx_ops.ingest import Hub
+    from notoryx_ops.store import Store
+
+    cfg = config.load(tmp_path / "config.toml")
     store = Store(tmp_path / "ops.sqlite")
     hub = Hub()
     fleet = Fleet(cfg, store, None, Alerts(cfg, store, hub), hub)
