@@ -48,7 +48,7 @@ def public_view(cfg: Config) -> dict[str, Any]:
         },
         "alerts": {
             "discord_webhook_set": bool(cfg.discord_webhook), "webhook_url": cfg.webhook_url,
-            "webhook_secret_set": bool(cfg.webhook_secret),
+            "webhook_secret_set": bool(cfg.webhook_secret), "radio_lost_minutes": cfg.radio_lost_minutes,
         },
         "mqtt": [
             {"name": m.name, "host": m.host, "port": m.port, "username": m.username, "password_set": bool(m.password),
@@ -164,6 +164,8 @@ def apply_changes(cfg: Config, data: dict[str, Any]) -> list[str]:
         new["webhook_url"] = _url(al.get("webhook_url", cfg.webhook_url), "Webhook URL")
         if al.get("webhook_secret") is not None:
             new["webhook_secret"] = _text(al["webhook_secret"], "Webhook secret", 200)
+        if al.get("radio_lost_minutes") is not None:
+            new["radio_lost_minutes"] = _num(al["radio_lost_minutes"], 0, 1440, "Radio lost after minutes")
     tr = data.get("terrain") or {}
     if tr:
         src = tr.get("source", cfg.terrain_source)
@@ -303,6 +305,7 @@ def to_toml(cfg: Config) -> str:
         f"discord_webhook = {_q(cfg.discord_webhook)}",
         f"webhook_url = {_q(cfg.webhook_url)}",
         f"webhook_secret = {_q(cfg.webhook_secret)}",
+        f"radio_lost_minutes = {float(cfg.radio_lost_minutes)}",
         "",
         "[terrain]",
         f"source = {_q(cfg.terrain_source)}",

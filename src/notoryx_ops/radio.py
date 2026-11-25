@@ -30,6 +30,10 @@ class RadioLink:
         self.error: str | None = None
         self.self_info: dict[str, Any] = {}
         self.connected_at: float | None = None
+        self.disconnected_since: float | None = time.time() if self.enabled else None
+        self.reconnects = 0
+        self._health: dict[str, Any] = {}
+        self._health_at = 0.0
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
 
@@ -104,7 +108,11 @@ class RadioLink:
                 mc.subscribe(EventType.DISCONNECTED, on_disconnect)
                 await mc.ensure_contacts()
                 await mc.start_auto_message_fetching()
+                if self.connected_at is not None:
+                    self.reconnects += 1
                 self.state, self.error, self.connected_at = "connected", None, time.time()
+                self.disconnected_since = None
+                self._health_at = 0.0
                 delay = 5
                 log.info("radio connected: %s", self.self_info.get("name"))
                 while not self._stop.is_set() and self.state == "connected" and mc.is_connected:
@@ -115,6 +123,8 @@ class RadioLink:
                 self.error = str(exc) or exc.__class__.__name__
                 log.warning("radio link failed: %s", self.error)
             self.state = "disconnected"
+            if self.disconnected_since is None:
+                self.disconnected_since = time.time()
             if self.mc:
                 try:
                     await self.mc.disconnect()
@@ -123,6 +133,40 @@ class RadioLink:
                 self.mc = None
             await asyncio.sleep(delay)
             delay = min(delay * 2, 120)
+
+    async def health(self, max_age: float = 60) -> dict[str, Any]:
+        """Battery, firmware, uptime and radio stats of the station radio, asked at most once a minute."""
+        base = {"connected": self.connected, "reconnects": self.reconnects, "connected_at": self.connected_at,
+                "disconnected_since": self.disconnected_since, "error": self.error}
+        if not self.connected:
+            return {**base, **{k: v for k, v in self._health.items() if k in ("model", "firmware")}}
+        if time.time() - self._health_at < max_age:
+            return {**self._health, **base}
+        mc, out = self.mc, {}
+
+        async def ask(fn):
+            try:
+                ev = await asyncio.wait_for(fn(), timeout=6)
+                return dict(ev.payload or {}) if ev is not None and isinstance(getattr(ev, "payload", None), dict) else {}
+            except Exception:  # noqa: BLE001 - older firmware may not know a command
+                return {}
+
+        dev = await ask(mc.commands.send_device_query)
+        out["model"], out["firmware"] = dev.get("model") or None, dev.get("ver") or None
+        bat = await ask(mc.commands.get_bat)
+        if bat.get("level"):
+            out["battery_mv"] = bat["level"]
+        core = await ask(mc.commands.get_stats_core)
+        if core:
+            out["battery_mv"] = core.get("battery_mv") or out.get("battery_mv")
+            out["uptime_s"] = core.get("uptime_secs")
+            out["queue"] = core.get("queue_len")
+        rs = await ask(mc.commands.get_stats_radio)
+        if rs:
+            out.update(noise_floor=rs.get("noise_floor"), last_rssi=rs.get("last_rssi"), last_snr=rs.get("last_snr"),
+                       tx_air_s=rs.get("tx_air_secs"), rx_air_s=rs.get("rx_air_secs"))
+        self._health, self._health_at = out, time.time()
+        return {**out, **base}
 
     # ---- repeater operations ----------------------------------------------
     def _require(self):

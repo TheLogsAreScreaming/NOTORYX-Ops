@@ -117,6 +117,18 @@ class Alerts:
             else:
                 self._clear("prefix_clash", r["prefix"])
 
+    def check_radio(self, radio: Any, now: float | None = None) -> None:
+        """Alert when the station's own radio has been off the air for a while."""
+        now = now or time.time()
+        limit = self.cfg.radio_lost_minutes
+        since = getattr(radio, "disconnected_since", None)
+        if limit and radio.enabled and not radio.connected and since and now - since >= limit * 60:
+            mins = int((now - since) // 60)
+            why = f" ({radio.error})" if radio.error else ""
+            self._raise("radio_lost", "station-radio", "danger", f"The station radio has been disconnected for {mins} min{why}")
+        elif radio.connected or not radio.enabled or not limit:
+            self._clear("radio_lost", "station-radio")
+
     def check_observers(self, now: float) -> None:
         for o in self.store.q("SELECT * FROM observers"):
             if self.store.is_ignored(o["public_key"]):
