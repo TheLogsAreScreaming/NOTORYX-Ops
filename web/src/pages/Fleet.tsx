@@ -17,10 +17,13 @@ type Rep = {
   last_ok: any;
   alerts: { kind: string; severity: string; message: string }[];
   node: { prefix: string } | null;
+  watch_only: number;
+  relay: { packets_24h: number; last_relay: number | null; neighbours: { prefix: string; packets: number }[] };
 };
 
 function statusOf(r: Rep): [string, string] {
   if (!r.enabled) return ["plain", "Paused"];
+  if (r.watch_only) return r.alerts.find((a) => a.kind === "quiet") ? ["bad", "Quiet"] : r.last_heard ? ["info", "Watching"] : ["plain", "Not heard yet"];
   const sev = (k: string) => r.alerts.find((a) => a.kind === k);
   if (sev("quiet")) return ["bad", "Quiet"];
   if (sev("low_battery")) return ["warn", "Low battery"];
@@ -34,6 +37,27 @@ function statusOf(r: Rep): [string, string] {
 function battPct(mv: number | null | undefined) {
   if (!mv) return null;
   return Math.max(0, Math.min(100, ((mv - 3300) / (4200 - 3300)) * 100));
+}
+
+/** A repeater the station only listens to: what it heard without asking. */
+function Watched({ rep }: { rep: Rep }) {
+  const r = rep.relay;
+  return (
+    <div className="card">
+      <h2>{rep.name} <span className="pill info">Watch only</span></h2>
+      <table>
+        <tbody>
+          <tr><th>Last heard</th><td>{ago(rep.last_heard)}</td></tr>
+          <tr><th>Packets it passed on (24 h)</th><td>{r?.packets_24h ?? 0}</td></tr>
+          <tr><th>Last one</th><td>{ago(r?.last_relay)}</td></tr>
+          <tr><th>Next to it in paths</th><td className="mono">{r?.neighbours?.length ? r.neighbours.map((n) => `${n.prefix.toUpperCase()} (${n.packets})`).join(", ") : "—"}</td></tr>
+        </tbody>
+      </table>
+      <div className="small faint" style={{ marginTop: 8 }}>
+        Worked out from the paths of packets the station heard. Short prefixes can be shared by more than one repeater, so these are estimates. Nothing is ever sent to this repeater.
+      </div>
+    </div>
+  );
 }
 
 function History({ rep }: { rep: Rep }) {
@@ -97,18 +121,19 @@ function AddRepeater({ known, onDone }: { known: Node[]; onDone: () => void }) {
   const [key, setKey] = useState("");
   const [name, setName] = useState("");
   const [pw, setPw] = useState("");
+  const [watch, setWatch] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
     <div className="card">
-      <h2>Add a repeater you own</h2>
+      <h2>Add a repeater</h2>
       <form
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
           if (!/^[0-9a-fA-F]{64}$/.test(key.trim())) return setErr("Pick a heard repeater or paste its 64-character public key.");
           if (!name.trim()) return setErr("Give it a name.");
-          api("/api/fleet", { method: "POST", body: { public_key: key.trim().toLowerCase(), name: name.trim(), password: pw } })
-            .then(() => (setKey(""), setName(""), setPw(""), setErr(null), onDone()))
+          api("/api/fleet", { method: "POST", body: { public_key: key.trim().toLowerCase(), name: name.trim(), password: watch ? "" : pw, watch_only: watch } })
+            .then(() => (setKey(""), setName(""), setPw(""), setWatch(false), setErr(null), onDone()))
             .catch((e2) => setErr(e2.message));
         }}
       >
@@ -134,10 +159,18 @@ function AddRepeater({ known, onDone }: { known: Node[]; onDone: () => void }) {
         <input className="mono" placeholder="Public key (64 hex characters)" value={key} onChange={(e) => (setKey(e.target.value), setErr(null))} aria-label="Public key" />
         <div className="row">
           <input style={{ flex: 1 }} placeholder="Name" value={name} onChange={(e) => (setName(e.target.value), setErr(null))} aria-label="Name" />
-          <input style={{ flex: 1 }} type="password" placeholder="Admin password (optional)" value={pw} onChange={(e) => setPw(e.target.value)} aria-label="Admin password" autoComplete="new-password" />
+          {!watch && <input style={{ flex: 1 }} type="password" placeholder="Admin password (optional)" value={pw} onChange={(e) => setPw(e.target.value)} aria-label="Admin password" autoComplete="new-password" />}
           <button type="submit" className="primary">Add</button>
         </div>
-        <div className="small faint">The password stays in this station's database and is only sent to the repeater over the mesh. Without it you get status only, no firmware check or settings.</div>
+        <label className="row small" style={{ gap: 6 }}>
+          <input type="checkbox" checked={watch} onChange={(e) => setWatch(e.target.checked)} />
+          Watch only: it isn't mine, never send it anything
+        </label>
+        <div className="small faint">
+          {watch
+            ? "The station only listens: when it was last heard, how many packets it passed on and its neighbours. You still get an alert if it goes quiet."
+            : "For a repeater you own. The password stays in this station's database and is only sent to the repeater over the mesh. Without it you get status only, no firmware check or settings."}
+        </div>
         {err && <div className="err">{err}</div>}
       </form>
     </div>
@@ -317,7 +350,7 @@ export default function Fleet() {
                   <td>{fmt(r.last_ok?.noise_floor)}</td>
                   <td>{fmt(r.last_ok?.last_snr, 1)}</td>
                   <td>{duration(r.last_ok?.uptime_s)}</td>
-                  <td className="mono small">{r.firmware || "—"}</td>
+                  <td className="mono small">{r.watch_only ? <span className="faint">relayed {r.relay?.packets_24h ?? 0} today</span> : r.firmware || "—"}</td>
                   <td>{ago(r.last_heard)}</td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <div className="row" style={{ flexWrap: "nowrap" }}>
@@ -326,7 +359,7 @@ export default function Fleet() {
                       >
                         {r.enabled ? "Pause" : "Resume"}
                       </button>
-                      <button
+                      {!r.watch_only && <button
                         onClick={() => {
                           const pw = window.prompt(`Admin password for ${r.name} (leave empty to remove it)`);
                           if (pw === null) return;
@@ -334,7 +367,7 @@ export default function Fleet() {
                         }}
                       >
                         Password
-                      </button>
+                      </button>}
                       <button
                         className="danger"
                         onClick={() => {
@@ -353,7 +386,7 @@ export default function Fleet() {
         </table>
         {reps.length === 0 && <div className="empty" style={{ padding: 16 }}>No repeaters yet. Add the ones you own below.</div>}
       </div>
-      {selected && <History rep={selected} />}
+      {selected && (selected.watch_only ? <Watched rep={selected} /> : <History rep={selected} />)}
       {selected?.alerts.length ? (
         <div className="card">
           <h2>Open alerts for {selected.name}</h2>
