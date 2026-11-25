@@ -22,6 +22,11 @@ log = logging.getLogger(__name__)
 
 FIRMWARE_EVERY_S = 24 * 3600
 NEIGHBOURS_EVERY_S = 6 * 3600
+# A repeater can miss the status request sent right after a login, so pause first and
+# ask once more before calling the poll failed.
+AFTER_LOGIN_PAUSE_S = 2.0
+STATUS_RETRY_PAUSE_S = 3.0
+STATUS_TRIES = 2
 
 # Settings that can be pushed to several repeaters at once. Names follow the repeater CLI.
 BULK_SETTINGS: dict[str, str] = {
@@ -175,7 +180,8 @@ class Fleet:
         try:
             if rep.get("password"):
                 await self.radio.login(key, rep["password"])
-            st = await self.radio.status(key)
+                await asyncio.sleep(AFTER_LOGIN_PAUSE_S)
+            st = await self._status_with_retry(key)
             row = {"polled_at": now, **status_row(st)}
             last_fw = self.store.one("SELECT polled_at FROM repeater_status WHERE repeater_id = ? AND firmware IS NOT NULL"
                                      " ORDER BY polled_at DESC LIMIT 1", (rep["id"],))
@@ -201,6 +207,18 @@ class Fleet:
         self.store.add_status(rep["id"], row)
         self.hub.publish({"type": "fleet_status", "repeater_id": rep["id"], "ok": bool(row["ok"])})
         return row
+
+    async def _status_with_retry(self, key: str) -> dict[str, Any]:
+        """Ask for status, and once more after a short pause if the first reply never came."""
+        for attempt in range(1, STATUS_TRIES + 1):
+            try:
+                return await self.radio.status(key)
+            except RadioError:
+                if attempt == STATUS_TRIES:
+                    raise
+                log.info("no status reply from %s, asking again", key[:8])
+                await asyncio.sleep(STATUS_RETRY_PAUSE_S)
+        raise RadioError("No status reply.")  # unreachable; keeps type checkers happy
 
     # ---- bulk settings ----------------------------------------------------
     @staticmethod
