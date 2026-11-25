@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, netstats, planning, settings
+from . import analytics, decoder, integrations, netstats, planning, settings, updates
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -28,6 +28,7 @@ from .radio import RadioError
 from .station import Station
 from .store import PKT_NOT_IGNORED
 
+RESTART_CODE = 75  # exit code that asks whoever runs the station to start it again
 MAX_CHANNEL_TEXT = 140  # bytes; the sender's name and ": " also go in the packet
 
 
@@ -49,6 +50,7 @@ class RepeaterIn(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     password: str = Field(default="", max_length=64)
     notes: str = Field(default="", max_length=500)
+    watch_only: bool = False
 
 
 class RepeaterPatch(BaseModel):
@@ -56,6 +58,7 @@ class RepeaterPatch(BaseModel):
     password: str | None = Field(default=None, max_length=64)
     notes: str | None = Field(default=None, max_length=500)
     enabled: bool | None = None
+    watch_only: bool | None = None
 
 
 class BulkIn(BaseModel):
@@ -254,6 +257,48 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         """Stop the station process. The Mac app has no window, so the dashboard offers this."""
         asyncio.get_running_loop().call_later(0.5, os.kill, os.getpid(), signal.SIGINT)
         return {"stopping": True}
+
+    @app.post("/api/station/restart", dependencies=[Depends(admin)])
+    async def station_restart():
+        """Restart the station, e.g. after installing an add-on. The Mac app, systemd and Docker start it
+        again on exit code 75; run by hand, it just stops."""
+        asyncio.get_running_loop().call_later(0.5, os._exit, RESTART_CODE)
+        return {"restarting": True}
+
+    # ---- updates and add-ons ----------------------------------------------------
+    updates_dir = cfg.data_dir / "updates"
+
+    async def upd(fn, *a):
+        try:
+            return await asyncio.to_thread(fn, *a)
+        except updates.UpdateError as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+    @app.get("/api/updates", dependencies=[Depends(admin)])
+    async def updates_check(force: bool = False):
+        return await upd(updates.summary, force)
+
+    @app.post("/api/updates/download", dependencies=[Depends(admin)])
+    async def updates_download():
+        """Fetch and check the newest Mac app. The Mac app then swaps itself for it."""
+        s = await upd(updates.summary)
+        if not s["newer"] or not s["mac_asset"]:
+            raise HTTPException(409, "There's no newer Mac app to download.")
+        path = await upd(updates.download, s["mac_asset"], updates_dir)
+        st.store.audit("update_downloaded", {"file": path.name})
+        return {"path": str(path), "version": s["latest"]["version"]}
+
+    @app.post("/api/addons/{addon_id}/install", dependencies=[Depends(admin)])
+    async def addon_install(addon_id: str):
+        ver = await upd(updates.install_addon, addon_id, updates_dir)
+        st.store.audit("addon_installed", {"addon": addon_id, "version": ver})
+        return {"installed": ver, "restart_needed": True}
+
+    @app.post("/api/addons/{addon_id}/remove", dependencies=[Depends(admin)])
+    async def addon_remove(addon_id: str):
+        await upd(updates.remove_addon, addon_id)
+        st.store.audit("addon_removed", {"addon": addon_id})
+        return {"removed": True, "restart_needed": True}
 
     @app.get("/api/overview")
     def overview():
@@ -627,7 +672,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.post("/api/fleet", dependencies=[Depends(operator)])
     def fleet_add(body: RepeaterIn):
         try:
-            rid = st.fleet.add(body.public_key, body.name, body.password, body.notes)
+            rid = st.fleet.add(body.public_key, body.name, body.password, body.notes, body.watch_only)
         except Exception as exc:
             if "UNIQUE" in str(exc):
                 raise HTTPException(409, "That repeater is already in your fleet.") from exc
@@ -637,8 +682,9 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.patch("/api/fleet/{rid}", dependencies=[Depends(operator)])
     def fleet_update(rid: int, body: RepeaterPatch):
         fields: dict[str, Any] = body.model_dump()
-        if fields.get("enabled") is not None:
-            fields["enabled"] = int(fields["enabled"])
+        for flag in ("enabled", "watch_only"):
+            if fields.get(flag) is not None:
+                fields[flag] = int(fields[flag])
         st.fleet.update(rid, **fields)
         return {"ok": True}
 
