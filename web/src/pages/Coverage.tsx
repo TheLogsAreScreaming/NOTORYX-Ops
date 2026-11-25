@@ -3,6 +3,7 @@ import { GeoJSONSource, ImageSource, Map as MlMap, MapMouseEvent } from "maplibr
 import MapView, { fitTo, onGlobe } from "../components/MapView";
 import { currentTheme, onTheme, snrColor } from "../themes";
 import { api, useApi, Node } from "../api";
+import { Units, fmtArea, fmtDistance, fmtHeight, heightIn, heightOut, heightUnit, nearestRadius, radiusChoices, useUnits } from "../units";
 
 type Mode = "measured" | "terrain" | "profile" | "plan";
 type Pt = { lat: number; lon: number };
@@ -65,8 +66,19 @@ function corners(b: [number, number, number, number]): [[number, number], [numbe
   return [[w, n], [e, n], [e, s], [w, s]];
 }
 
-function km(m: number) {
-  return m >= 1000 ? `${(m / 1000).toFixed(m >= 10000 ? 0 : 1)} km` : `${Math.round(m)} m`;
+/** A height input that shows feet or metres but always reports metres ("" = use the default). */
+function HeightInput({ label, value, fallback, units, onChange }: {
+  label: string; value: number | ""; fallback: number; units: Units; onChange: (m: number | "") => void;
+}) {
+  return (
+    <label>
+      {label} ({heightUnit(units)}){" "}
+      <input type="number" min={0} max={units === "imperial" ? 1000 : 300} step={units === "imperial" ? 1 : 0.5} style={{ width: 70 }}
+        placeholder={String(heightIn(fallback, units))}
+        value={value === "" ? "" : heightIn(value, units)}
+        onChange={(e) => onChange(e.target.value === "" ? "" : heightOut(Number(e.target.value), units))} />
+    </label>
+  );
 }
 
 /** Ground, line of sight and the first Fresnel zone along a link. */
@@ -123,6 +135,7 @@ function Budget({ b }: { b: any }) {
 
 export default function Coverage() {
   const [mode, setMode] = useState<Mode>("measured");
+  const units = useUnits();
   const [size, setSize] = useState(1500);
   const [days, setDays] = useState(30);
   const { data, error } = useApi<any>(mode === "measured" ? `/api/coverage?size_m=${size}&days=${days}` : null);
@@ -375,6 +388,17 @@ export default function Coverage() {
   }, [mode, ready]);
 
   const cal = status?.calibration;
+  const radii = radiusChoices(units, mode === "plan" ? "small" : "large");
+  // Keep the radius on a choice the picker shows when the units or the tab change.
+  useEffect(() => {
+    setRadius((r) => nearestRadius(r, radii));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [units, mode]);
+  const radiusPicker = (
+    <label>Radius <select value={nearestRadius(radius, radii)} onChange={(e) => setRadius(Number(e.target.value))}>{radii.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+  );
+  const repH = status?.repeater_height_m ?? 10;
+  const cliH = status?.client_height_m ?? 1.5;
   const pickNode = (set: (p: Pt) => void, setH: (h: number | "") => void) => (key: string) => {
     const n = placed.find((x) => x.public_key === key);
     if (!n) return;
@@ -403,7 +427,7 @@ export default function Coverage() {
               <label>
                 Hex size{" "}
                 <select value={size} onChange={(e) => setSize(Number(e.target.value))}>
-                  {SIZES.map((s) => <option key={s} value={s}>{s >= 1000 ? `${s / 1000} km` : `${s} m`}</option>)}
+                  {SIZES.map((s) => <option key={s} value={s}>{fmtDistance(s, units)}</option>)}
                 </select>
               </label>
               <label>
@@ -429,15 +453,15 @@ export default function Coverage() {
         {mode === "terrain" && (
           <>
             <div className="small muted" style={{ marginBottom: 8 }}>
-              Click the map to place a site. The shading shows where a {status?.client_height_m ?? 1.5} m handheld should hear it, worked out from the terrain.
+              Click the map to place a site. The shading shows where a {fmtHeight(cliH, units)} handheld should hear it, worked out from the terrain.
             </div>
             <div className="row small">
-              <label>Antenna height (m) <input type="number" min={0} max={300} style={{ width: 70 }} placeholder={String(status?.repeater_height_m ?? 10)} value={siteH} onChange={(e) => setSiteH(e.target.value === "" ? "" : Number(e.target.value))} /></label>
-              <label>Radius <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>{[5, 10, 15, 25, 40].map((r) => <option key={r} value={r}>{r} km</option>)}</select></label>
+              <HeightInput label="Antenna height" value={siteH} fallback={repH} units={units} onChange={setSiteH} />
+              {radiusPicker}
             </div>
             {cov && (
               <div className="small" style={{ marginTop: 8 }}>
-                Ground {cov.site.ground_m} m · covers about <strong>{cov.covered_km2} km²</strong>
+                Ground {fmtHeight(cov.site.ground_m, units)} · covers about <strong>{fmtArea(cov.covered_km2, units)}</strong>
                 <div className="row" style={{ marginTop: 6 }}>
                   {[["strong", 25], ["good", 15], ["fair", 8], ["weak", 3], ["edge", 0.5]].map(([l, v]) => (
                     <span key={l as string}><span className="dot" style={{ background: currentTheme().snr[[25, 15, 8, 3, 0.5].indexOf(v as number)] }} />{l}</span>
@@ -453,7 +477,7 @@ export default function Coverage() {
                 {highs.map((h, i) => (
                   <div key={i} className="row">
                     <button className="small" onClick={() => setSite({ lat: h.lat, lon: h.lon })}>Use</button>
-                    {h.elevation_m} m <span className="faint">(+{h.prominence_m} m over its surroundings)</span>
+                    {fmtHeight(h.elevation_m, units)} <span className="faint">(+{fmtHeight(h.prominence_m, units)} over its surroundings)</span>
                   </div>
                 ))}
               </div>
@@ -468,14 +492,14 @@ export default function Coverage() {
             </div>
             <div className="stack small">
               <label>From <select value="" onChange={(e) => pickNode(setA, setAH)(e.target.value)}><option value="">{a ? `${a.lat.toFixed(4)}, ${a.lon.toFixed(4)}` : "click the map or pick a node"}</option>{placed.map((n) => <option key={n.public_key} value={n.public_key}>{n.name || n.prefix}</option>)}</select></label>
-              <label>Height (m) <input type="number" min={0} max={300} style={{ width: 70 }} placeholder={String(status?.client_height_m ?? 1.5)} value={aH} onChange={(e) => setAH(e.target.value === "" ? "" : Number(e.target.value))} /></label>
+              <HeightInput label="Height" value={aH} fallback={cliH} units={units} onChange={setAH} />
               <label>To <select value="" onChange={(e) => pickNode(setB, setBH)(e.target.value)}><option value="">{b ? `${b.lat.toFixed(4)}, ${b.lon.toFixed(4)}` : "click the map or pick a node"}</option>{placed.map((n) => <option key={n.public_key} value={n.public_key}>{n.name || n.prefix}</option>)}</select></label>
-              <label>Height (m) <input type="number" min={0} max={300} style={{ width: 70 }} placeholder={String(status?.client_height_m ?? 1.5)} value={bH} onChange={(e) => setBH(e.target.value === "" ? "" : Number(e.target.value))} /></label>
+              <HeightInput label="Height" value={bH} fallback={cliH} units={units} onChange={setBH} />
             </div>
             {prof && (
               <div style={{ marginTop: 8 }}>
                 <div className="row small">
-                  <strong>{km(prof.distance_m)}</strong>
+                  <strong>{fmtDistance(prof.distance_m, units)}</strong>
                   <span className={`pill ${prof.line_of_sight ? "ok" : "bad"}`}>{prof.line_of_sight ? "Line of sight" : "Blocked by terrain"}</span>
                   <span className="pill plain">Fresnel {prof.fresnel_clear_pct}% clear</span>
                   <span className={`pill ${prof.works ? "ok" : "bad"}`}>{prof.works ? "Should work" : "Unlikely"}</span>
@@ -493,8 +517,8 @@ export default function Coverage() {
               Repeaters heard in the last 30 days with a known position count as today's network. Click the map to try up to 5 new relays: green is the area they would add.
             </div>
             <div className="row small">
-              <label>Relay height (m) <input type="number" min={0} max={300} style={{ width: 70 }} placeholder={String(status?.repeater_height_m ?? 10)} value={siteH} onChange={(e) => setSiteH(e.target.value === "" ? "" : Number(e.target.value))} /></label>
-              <label>Radius <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}>{[5, 10, 15, 25].map((r) => <option key={r} value={r}>{r} km</option>)}</select></label>
+              <HeightInput label="Relay height" value={siteH} fallback={repH} units={units} onChange={setSiteH} />
+              {radiusPicker}
             </div>
             <div className="row" style={{ marginTop: 8 }}>
               <button onClick={suggest}>Suggest spots here</button>
@@ -502,8 +526,8 @@ export default function Coverage() {
             </div>
             {plan && (
               <div className="small" style={{ marginTop: 8 }}>
-                Today: <strong>{plan.covered_km2_before} km²</strong> · with the new relays: <strong>{plan.covered_km2_after} km²</strong>
-                <div><span className="pill ok">+{plan.gained_km2} km²</span> <span className="faint">from {plan.sites.filter((s: any) => !s.new).length} repeaters today</span></div>
+                Today: <strong>{fmtArea(plan.covered_km2_before, units)}</strong> · with the new relays: <strong>{fmtArea(plan.covered_km2_after, units)}</strong>
+                <div><span className="pill ok">+{fmtArea(plan.gained_km2, units)}</span> <span className="faint">from {plan.sites.filter((s: any) => !s.new).length} repeaters today</span></div>
               </div>
             )}
             {sugg.length > 0 && (
@@ -512,7 +536,7 @@ export default function Coverage() {
                 {sugg.map((s, i) => (
                   <div key={i} className="row">
                     <button className="small" onClick={() => setNewSites((x) => (x.length >= 5 ? x : [...x, { lat: s.lat, lon: s.lon }]))}>Try</button>
-                    {s.elevation_m} m high · adds {s.gained_km2} km²
+                    {fmtHeight(s.elevation_m, units)} high · adds {fmtArea(s.gained_km2, units)}
                   </div>
                 ))}
               </div>

@@ -29,7 +29,7 @@ Settings: `~/Library/Application Support/NOTORYX Ops/config.toml`. Log: `station
 
 ## Settings
 
-Open **Settings** in the sidebar (Cmd-, in the Mac app). It has the look, the radio (with **Find ports** for USB and **Scan** for Bluetooth), channels, fleet checks, alerts (with **Send a test alert**), MQTT brokers, station and access. **Save** applies changes right away; only the listen address and port wait for a restart. Passwords, tokens and webhook links are never shown again after saving.
+Open **Settings** in the sidebar (Cmd-, in the Mac app). It has the look and distance units, the radio (with **Find ports** for USB and **Scan** for Bluetooth), channels, fleet checks, alerts (with **Send a test alert**), MQTT brokers, station and access. **Save** applies changes right away; only the listen address and port wait for a restart. Passwords, tokens and webhook links are never shown again after saving.
 
 Everything is stored in a settings file you can also edit by hand. The main parts:
 
@@ -43,6 +43,10 @@ Everything is stored in a settings file you can also edit by hand. The main part
 | `[[mqtt]]` | One block per broker that carries observer packets |
 
 Restart the station after editing the file by hand.
+
+### Distance units
+
+**Look and units → Distances** switches every page between **Kilometres and metres** and **Miles and feet**: range rings, Coverage hex sizes, radii, heights and areas, link lengths, survey accuracy and the public map's position detail. Heights you type are converted to metres for the station. The choice is saved in this browser; until you pick one, browsers set to the United States start in miles.
 
 ### Stale and ignored nodes
 
