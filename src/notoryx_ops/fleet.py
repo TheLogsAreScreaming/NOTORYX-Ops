@@ -163,7 +163,7 @@ class Fleet:
         await asyncio.sleep(20)
         while True:
             try:
-                if self.radio.connected and any(r["enabled"] and not r.get("watch_only") for r in self.store.repeaters()):
+                if self.radio.connected and not self.radio.shared and any(r["enabled"] and not r.get("watch_only") for r in self.store.repeaters()):
                     await self.poll_round()
                 self.alerts.evaluate()
                 self.store.prune(self.cfg.packet_retention_days, self.cfg.fleet_history_days)

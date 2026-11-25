@@ -52,6 +52,9 @@ class Station:
         self.ha = HomeAssistant(cfg, self.store, self)
         self.pg = PostgresArchive(cfg, self.store)
         self.stats_push = StatsPush(cfg, self.store)
+        from .share import RadioShare
+
+        self.share = RadioShare(cfg, self)
         from . import addons
 
         self.addons = addons.load(self, addon_factories)
@@ -79,6 +82,7 @@ class Station:
         self.pg.start()
         self.stats_push.start()
         self._watch = asyncio.create_task(self._watch_radio(), name="radio-watch")
+        await self.share.start()
         for a in self.addons:
             try:
                 a.start()
@@ -106,6 +110,7 @@ class Station:
         pg_before = (self.cfg.pg_enabled, self.cfg.pg_dsn)
         push_before = (self.cfg.stats_push_enabled, self.cfg.stats_push_url, self.cfg.stats_push_token)
         mqtt_before = [asdict(m) for m in self.cfg.mqtt]
+        share_before = (self.cfg.share_enabled, self.cfg.share_port)
         restart = settings.apply_changes(self.cfg, data)
         settings.save(self.cfg)
 
@@ -140,10 +145,14 @@ class Station:
         if (self.cfg.stats_push_enabled, self.cfg.stats_push_url, self.cfg.stats_push_token) != push_before:
             self.stats_push.stop()
             self.stats_push.start()
+        if (self.cfg.share_enabled, self.cfg.share_port) != share_before:
+            await self.share.stop()
+            await self.share.start()
         self.alerts.evaluate()
         return restart
 
     async def stop(self) -> None:
+        await self.share.stop()
         if getattr(self, "_watch", None):
             self._watch.cancel()
         await self.radio.stop()
@@ -171,7 +180,8 @@ class Station:
             "version": __version__,
             "demo": self.cfg.demo,
             "started_at": self.started_at,
-            "radio": self.radio.info(),
+            "radio": {**self.radio.info(), "shared": self.radio.shared},
+            "share": self.share.info(),
             "mqtt": [m.info() for m in self.mqtt],
             "fleet": self.fleet.info(),
             "channels": [{"name": c.name, "hash": c.hash} for c in self.channels],

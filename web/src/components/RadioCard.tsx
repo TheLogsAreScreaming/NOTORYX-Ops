@@ -209,11 +209,69 @@ export default function RadioCard({ r, set, onSaved, onError }: {
 
       {note && <div className="small" style={{ marginTop: 8 }}>{note}</div>}
 
+      <ShareSection onError={onError} />
+
       <div style={{ marginTop: 10 }}>
         <Field label="Observer name" hint="How this radio shows up on the Observers page.">
           <input value={r.observer_name} onChange={(e) => set("radio.observer_name", e.target.value)} />
         </Field>
       </div>
+    </div>
+  );
+}
+
+/** Let one app on the local network use the station radio through the station. */
+function ShareSection({ onError }: { onError: (m: string | null) => void }) {
+  const [st, setSt] = useState<any>(null);
+  const [port, setPort] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api<any>("/api/station").then((x) => setSt(x.share)).catch(() => {});
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, []);
+  if (!st) return null;
+  const p = port ?? st.port;
+
+  function save(enabled: boolean) {
+    setBusy(true);
+    onError(null);
+    api("/api/settings", { method: "PUT", body: { share: { enabled, port: p } } })
+      .then(() => setTimeout(load, 800))
+      .catch((e) => onError(e.message))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <div className="subcard" style={{ marginTop: 12 }}>
+      <div className="row">
+        <b style={{ flex: 1 }}>Share this radio with an app</b>
+        <span className={`pill ${st.client ? "ok" : st.listening ? "info" : "plain"}`}>
+          {st.client ? "App connected" : st.listening ? "Waiting for an app" : "Off"}
+        </span>
+      </div>
+      <div className="small muted">
+        Your phone or computer app connects to the station over Wi-Fi as if it were a Wi-Fi radio, so the app and the
+        station can both use this one radio. While an app is connected, the station only listens: messages go to the app,
+        and fleet checks and sending from here pause.
+      </div>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <Field label="Port"><input type="number" style={{ width: 100 }} min={1024} max={65535} value={p} onChange={(e) => setPort(Number(e.target.value))} /></Field>
+        {st.enabled
+          ? <button type="button" disabled={busy} onClick={() => save(false)}>Turn off sharing</button>
+          : <button type="button" className="primary" disabled={busy} onClick={() => save(true)}>Turn on sharing</button>}
+      </div>
+      {st.enabled && st.listening && (
+        <div className="small">
+          In the app, add a <b>Wi-Fi / TCP</b> radio at{" "}
+          {st.addresses?.length ? st.addresses.map((a: string) => <span key={a} className="mono"><b>{a}</b>:{st.port} </span>) : <span>this computer's address, port {st.port}</span>}
+          (same Wi-Fi network). Close the app's Bluetooth link to the radio first.
+        </div>
+      )}
+      {st.client && <div className="small">Connected: <span className="mono">{st.client}</span> since {new Date(st.client_since * 1000).toLocaleTimeString()} · {st.frames_to_app} frames to the app, {st.frames_from_app} from it</div>}
+      {st.error && <div className="small err">{st.error}</div>}
+      <div className="small faint">Only addresses on your own network can connect, one app at a time. Anyone on your Wi-Fi could use the radio while this is on, so turn it off when you don't need it. macOS may ask once whether to allow incoming connections.</div>
     </div>
   );
 }

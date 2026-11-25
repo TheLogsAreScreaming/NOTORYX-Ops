@@ -108,3 +108,13 @@ def test_settings_api(tmp_path):
         ok = c.put("/api/settings", json={"fleet": {"poll_minutes": 25}}, headers={"Authorization": "Bearer a-long-token-123"})
         assert ok.status_code == 200
     assert config.load(tmp_path / "config.toml").poll_minutes == 25
+
+
+def test_share_settings_round_trip(tmp_path):
+    cfg = load(tmp_path)
+    settings.apply_changes(cfg, {"share": {"enabled": True, "port": 5005}})
+    settings.save(cfg)
+    again = load(tmp_path)
+    assert again.share_enabled and again.share_port == 5005
+    with pytest.raises(ValueError):
+        settings.apply_changes(cfg, {"share": {"port": 80}})
