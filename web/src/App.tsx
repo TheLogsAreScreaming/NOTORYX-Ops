@@ -50,6 +50,8 @@ function Dashboard() {
   const { data: open } = useApi<any[]>("/api/alerts?open=true", 30000);
   const { data: info } = useApi<any>("/api/station", 15000);
   const { data: addons } = useApi<any[]>("/api/addons");
+  const { data: upd } = useApi<any>(me?.is_admin ? "/api/updates" : null, 6 * 3600 * 1000);
+  const update = upd?.newer ? upd.latest?.version : null;
   const loc = useLocation();
   const full = loc.pathname === "/" || loc.pathname === "/coverage";
   return (
@@ -78,7 +80,10 @@ function Dashboard() {
             {live ? "Live" : "Reconnecting"}
             {info?.demo ? " · demo data" : ""}
           </div>
-          <div>v{info?.version || ""}</div>
+          <div>
+            v{info?.version || ""}
+            {update && <> · <NavLink to="/settings" className="inline-link">{update} is out</NavLink></>}
+          </div>
           {me?.user && (
             <div className="row" style={{ marginTop: 6 }}>
               <span className="ell" title={me.user.role}>{me.user.username}</span>
