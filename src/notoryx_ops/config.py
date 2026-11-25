@@ -74,8 +74,9 @@ radio_lost_minutes = 5
 
 [share]
 # Let one app on your local network use the station radio over TCP (MeshCore companion protocol).
+# Not 5000: macOS uses that for AirPlay Receiver.
 enabled = false
-port = 5000
+port = 5050
 
 [terrain]
 # Elevation for coverage maps and link profiles: "glo90" (90 m, ~5 MB per 1° tile) or
@@ -182,7 +183,7 @@ class Config:
     mqtt: list[MqttSource] = field(default_factory=list)
     share_enabled: bool = False
     share_host: str = "0.0.0.0"
-    share_port: int = 5000
+    share_port: int = 5050
     terrain_source: str = "glo90"
     freq_mhz: float = 910.525
     bandwidth_khz: float = 62.5
@@ -278,7 +279,7 @@ def load(path: Path | None = None) -> Config:
         radio_lost_minutes=float(al.get("radio_lost_minutes", 5)),
         share_enabled=bool(sh.get("enabled", False)),
         share_host=str(sh.get("host", "0.0.0.0")),
-        share_port=int(sh.get("port", 5000)),
+        share_port=int(sh.get("port", 5050)),
         mqtt=[MqttSource(**m) for m in raw.get("mqtt", [])],
         terrain_source=str(tr.get("source", "glo90")),
         freq_mhz=float(tr.get("freq_mhz", Config.freq_mhz)),

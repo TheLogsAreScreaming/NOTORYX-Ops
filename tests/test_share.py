@@ -87,3 +87,20 @@ def test_station_radio_refuses_requests_while_shared(tmp_path):
     link.mc, link.state, link.shared = object(), "connected", True
     with pytest.raises(RadioError, match="sharing"):
         link._require()
+
+
+def test_busy_port_gives_a_clear_reason():
+    import socket
+
+    async def run():
+        holder = socket.socket()
+        holder.bind(("127.0.0.1", 0))
+        holder.listen()
+        port = holder.getsockname()[1]
+        cfg = SimpleNamespace(share_enabled=True, share_host="127.0.0.1", share_port=port)
+        share = RadioShare(cfg, SimpleNamespace(radio=FakeRadio(), hub=Hub()))
+        await share.start()
+        holder.close()
+        assert share.server is None and "another program is using it" in share.error
+
+    asyncio.run(run())
