@@ -84,7 +84,13 @@ class RadioShare:
             self.error = None
             log.info("sharing the radio on port %s", self.cfg.share_port)
         except OSError as exc:
-            self.error = f"Couldn't open port {self.cfg.share_port}: {exc.strerror or exc}"
+            why = exc.strerror or str(exc)
+            if exc.errno in (48, 98):  # address already in use (macOS, Linux)
+                why = "another program is using it"
+                if self.cfg.share_port == 5000:
+                    why += " (on a Mac that is usually AirPlay Receiver)"
+                why += ". Pick another port, such as 5050"
+            self.error = f"Couldn't open port {self.cfg.share_port}: {why}."
             log.warning("radio share: %s", self.error)
 
     async def stop(self) -> None:
