@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 import webbrowser
 from pathlib import Path
@@ -64,7 +65,13 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "open", False):
         webbrowser.open(f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}/")
     uvicorn.run(create_app(cfg), host=host, port=port, log_level="info")
-    return 0
+    # The station has shut down cleanly by now. Radio libraries (Bluetooth, the Meshtastic add-on) can leave
+    # threads behind that Python would wait for forever, which kept the process alive after Stop or Quit and
+    # held the radio. Leave right away instead.
+    logging.shutdown()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":

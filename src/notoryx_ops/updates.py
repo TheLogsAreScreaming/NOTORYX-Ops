@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
@@ -128,7 +129,7 @@ def _sums(rel: dict[str, Any]) -> dict[str, str]:
     return out
 
 
-def download(asset: str, folder: Path) -> Path:
+def download(asset: str, folder: Path, progress: Callable[[int, int | None], None] | None = None) -> Path:
     """Download one file of the newest release and check it against that release's SHA256SUMS."""
     rels = releases()
     if not rels:
@@ -145,9 +146,15 @@ def download(asset: str, folder: Path) -> Path:
     h = hashlib.sha256()
     req = urllib.request.Request(rel["assets"][asset], headers={"User-Agent": "notoryx-ops"})
     with urlopen(req, timeout=120) as r, open(tmp, "wb") as f:
+        total = r.headers.get("Content-Length") if hasattr(r, "headers") else None
+        total = int(total) if total and str(total).isdigit() else None
+        done = 0
         while chunk := r.read(1 << 16):
             h.update(chunk)
             f.write(chunk)
+            done += len(chunk)
+            if progress:
+                progress(done, total)
     if h.hexdigest() != want:
         tmp.unlink(missing_ok=True)
         raise UpdateError(f"{asset} didn't match its checksum, so it was thrown away. Try again later.")

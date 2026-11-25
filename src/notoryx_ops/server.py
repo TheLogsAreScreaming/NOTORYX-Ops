@@ -283,15 +283,39 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     async def updates_check(force: bool = False):
         return await upd(updates.summary, force)
 
+    dl: dict[str, Any] = {"state": "idle"}
+
     @app.post("/api/updates/download", dependencies=[Depends(admin)])
     async def updates_download():
-        """Fetch and check the newest Mac app. The Mac app then swaps itself for it."""
+        """Start fetching and checking the newest Mac app; follow it with /api/updates/progress.
+        When it is ready the Mac app swaps itself for it."""
+        if dl.get("state") in ("downloading", "checking"):
+            return dl
         s = await upd(updates.summary)
         if not s["newer"] or not s["mac_asset"]:
             raise HTTPException(409, "There's no newer Mac app to download.")
-        path = await upd(updates.download, s["mac_asset"], updates_dir)
-        st.store.audit("update_downloaded", {"file": path.name})
-        return {"path": str(path), "version": s["latest"]["version"]}
+        dl.clear()
+        dl.update(state="downloading", version=s["latest"]["version"], bytes=0, total=None, started=time.time())
+
+        def progress(done: int, total: int | None) -> None:
+            dl["bytes"], dl["total"] = done, total
+            if total and done >= total:
+                dl["state"] = "checking"
+
+        async def work() -> None:
+            try:
+                path = await asyncio.to_thread(updates.download, s["mac_asset"], updates_dir, progress)
+                dl.update(state="ready", path=str(path))
+                st.store.audit("update_downloaded", {"file": path.name})
+            except Exception as exc:  # noqa: BLE001
+                dl.update(state="error", error=str(exc))
+
+        dl["task"] = asyncio.create_task(work())
+        return {k: v for k, v in dl.items() if k != "task"}
+
+    @app.get("/api/updates/progress", dependencies=[Depends(admin)])
+    def updates_progress():
+        return {k: v for k, v in dl.items() if k != "task"}
 
     @app.post("/api/addons/{addon_id}/install", dependencies=[Depends(admin)])
     async def addon_install(addon_id: str):
