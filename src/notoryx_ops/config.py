@@ -69,6 +69,8 @@ discord_webhook = ""
 webhook_url = ""
 # Shared secret to sign generic webhooks (HMAC-SHA256 in X-Notoryx-Signature).
 webhook_secret = ""
+# Alert when the station's own radio has been disconnected this many minutes. 0 = off.
+radio_lost_minutes = 5
 
 [terrain]
 # Elevation for coverage maps and link profiles: "glo90" (90 m, ~5 MB per 1° tile) or
@@ -171,6 +173,7 @@ class Config:
     discord_webhook: str = ""
     webhook_url: str = ""
     webhook_secret: str = ""
+    radio_lost_minutes: float = 5
     mqtt: list[MqttSource] = field(default_factory=list)
     terrain_source: str = "glo90"
     freq_mhz: float = 910.525
@@ -263,6 +266,7 @@ def load(path: Path | None = None) -> Config:
         discord_webhook=al.get("discord_webhook", ""),
         webhook_url=al.get("webhook_url", ""),
         webhook_secret=al.get("webhook_secret", ""),
+        radio_lost_minutes=float(al.get("radio_lost_minutes", 5)),
         mqtt=[MqttSource(**m) for m in raw.get("mqtt", [])],
         terrain_source=str(tr.get("source", "glo90")),
         freq_mhz=float(tr.get("freq_mhz", Config.freq_mhz)),

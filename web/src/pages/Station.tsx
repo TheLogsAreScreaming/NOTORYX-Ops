@@ -38,6 +38,7 @@ export default function Station() {
               {r.error && <tr><th>Last error</th><td className="err">{r.error}</td></tr>}
             </tbody>
           </table>
+          <RadioHealth enabled={r.state !== "off"} />
           {r.state === "off" && <div className="small muted" style={{ marginTop: 8 }}>No radio set yet. Pick one in <Link to="/settings">Settings</Link>.</div>}
         </div>
         <div className="card">
@@ -80,6 +81,37 @@ export default function Station() {
           <Link to="/settings"><button>Open Settings</button></Link>
         </div>
       </div>
+    </>
+  );
+}
+
+function dur(sec?: number | null): string {
+  if (sec == null) return "—";
+  const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+/** Battery, firmware, uptime and airtime of the station radio. */
+function RadioHealth({ enabled }: { enabled: boolean }) {
+  const { data: h } = useApi<any>(enabled ? "/api/station/radio" : null, 60000);
+  if (!enabled || !h) return null;
+  const v = h.battery_mv ? h.battery_mv / 1000 : null;
+  return (
+    <>
+      <h3 style={{ marginTop: 14 }}>Health</h3>
+      <table>
+        <tbody>
+          {h.model && <tr><th>Model</th><td>{h.model}</td></tr>}
+          {h.firmware && <tr><th>Firmware</th><td>{h.firmware}</td></tr>}
+          {v != null && <tr><th>Battery</th><td className={v < 3.6 ? "err" : ""}>{v.toFixed(2)} V</td></tr>}
+          {h.uptime_s != null && <tr><th>Radio uptime</th><td>{dur(h.uptime_s)}</td></tr>}
+          {h.noise_floor != null && <tr><th>Noise floor</th><td>{h.noise_floor} dBm</td></tr>}
+          {h.last_rssi != null && <tr><th>Last packet</th><td>{h.last_rssi} dBm{h.last_snr != null ? ` · SNR ${h.last_snr} dB` : ""}</td></tr>}
+          {h.tx_air_s != null && <tr><th>Airtime</th><td>sent {dur(h.tx_air_s)} · heard {dur(h.rx_air_s)}</td></tr>}
+          <tr><th>Reconnects</th><td>{h.reconnects}{h.disconnected_since ? ` · down since ${ago(h.disconnected_since)}` : ""}</td></tr>
+        </tbody>
+      </table>
+      <div className="small faint" style={{ marginTop: 6 }}>Checked once a minute. An alert goes out when the radio is lost for longer than the time set in Settings → Alerts.</div>
     </>
   );
 }

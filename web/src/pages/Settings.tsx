@@ -108,7 +108,7 @@ export default function Settings() {
       integrations: { ...s.integrations, metrics_token: metricsTok, stats_push_token: statsTok },
       homeassistant: { ...s.homeassistant, password: haPw },
       postgres: { enabled: s.postgres.enabled, dsn: pgDsn },
-      alerts: { webhook_url: s.alerts.webhook_url, discord_webhook: discord, webhook_secret: secret },
+      alerts: { webhook_url: s.alerts.webhook_url, discord_webhook: discord, webhook_secret: secret, radio_lost_minutes: s.alerts.radio_lost_minutes },
       mqtt: s.mqtt.map((m: any, i: number) => ({ ...m, password: mqttPw[i] === undefined ? null : mqttPw[i] })),
     };
     api("/api/settings", { method: "PUT", body })
@@ -333,6 +333,9 @@ export default function Settings() {
             </Field>
             <Field label="Webhook signing secret" hint="Signs the JSON in an X-Notoryx-Signature header.">
               <Secret isSet={s.alerts.webhook_secret_set} value={secret} onChange={setSecret} placeholder="Shared secret" />
+            </Field>
+            <Field label="Station radio lost after (minutes)" hint="Alert when the station's own radio stays disconnected this long. 0 = off.">
+              <input type="number" min={0} max={1440} value={s.alerts.radio_lost_minutes ?? 5} onChange={(e) => set("alerts.radio_lost_minutes", Number(e.target.value))} />
             </Field>
             <div className="row">
               <button

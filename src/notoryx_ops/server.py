@@ -252,6 +252,11 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def station_info():
         return st.info()
 
+    @app.get("/api/station/radio")
+    async def station_radio():
+        """Battery, firmware, uptime and airtime of the station's own radio."""
+        return await st.radio.health()
+
     @app.post("/api/station/stop", dependencies=[Depends(admin)])
     async def station_stop():
         """Stop the station process. The Mac app has no window, so the dashboard offers this."""

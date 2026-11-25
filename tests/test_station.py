@@ -211,6 +211,45 @@ def test_store_rejects_and_clears_positions_off_the_globe(tmp_path):
     assert (by["Good"]["lat"], by["Good"]["lon"]) == (41.33, -73.09)
 
 
+def test_radio_lost_alert_raises_and_clears(tmp_path):
+    import time
+    from types import SimpleNamespace
+
+    from notoryx_ops import config
+    from notoryx_ops.alerts import Alerts
+    from notoryx_ops.ingest import Hub
+    from notoryx_ops.store import Store
+
+    cfg = config.load(tmp_path / "config.toml")
+    cfg.radio_lost_minutes = 5
+    store = Store(tmp_path / "ops.sqlite")
+    alerts = Alerts(cfg, store, Hub())
+    now = time.time()
+    radio = SimpleNamespace(enabled=True, connected=False, disconnected_since=now - 120, error="gone")
+    alerts.check_radio(radio, now)
+    assert not store.q("SELECT * FROM alerts WHERE kind = 'radio_lost' AND resolved_at IS NULL")
+    radio.disconnected_since = now - 400
+    alerts.check_radio(radio, now)
+    (a,) = store.q("SELECT * FROM alerts WHERE kind = 'radio_lost' AND resolved_at IS NULL")
+    assert "6 min" in a["message"] and "gone" in a["message"]
+    radio.connected, radio.disconnected_since = True, None
+    alerts.check_radio(radio, now)
+    assert not store.q("SELECT * FROM alerts WHERE kind = 'radio_lost' AND resolved_at IS NULL")
+
+
+def test_radio_health_endpoint_in_demo(tmp_path):
+    from fastapi.testclient import TestClient
+
+    from notoryx_ops import config
+    from notoryx_ops.server import create_app
+
+    cfg = config.load(tmp_path / "config.toml")
+    cfg.demo = True
+    with TestClient(create_app(cfg)) as c:
+        h = c.get("/api/station/radio").json()
+        assert h["connected"] and h["battery_mv"] and h["firmware"]
+
+
 def test_watch_only_repeater_is_never_polled(tmp_path):
     import json
     import time

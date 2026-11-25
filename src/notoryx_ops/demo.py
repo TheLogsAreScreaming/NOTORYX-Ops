@@ -132,6 +132,15 @@ class DemoRadio:
     connected = True
     error = None
 
+    enabled = True
+    disconnected_since = None
+    reconnects = 0
+
+    async def health(self, max_age: float = 60) -> dict[str, Any]:
+        return {"connected": True, "reconnects": 0, "connected_at": self._since, "disconnected_since": None,
+                "error": None, "model": "Demo radio", "firmware": "v1.11.0", "battery_mv": 4012, "uptime_s": 86400,
+                "queue": 0, "noise_floor": -112, "last_rssi": -88, "last_snr": 7.5, "tx_air_s": 41, "rx_air_s": 1830}
+
     def info(self) -> dict[str, Any]:
         return {"transport": "demo", "state": "connected", "error": None, "name": "Demo station radio",
                 "public_key": _key("station").hex(), "lat": CENTER[0], "lon": CENTER[1], "connected_at": self._since}

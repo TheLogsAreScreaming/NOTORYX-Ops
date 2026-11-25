@@ -78,11 +78,21 @@ class Station:
         self.ha.start()
         self.pg.start()
         self.stats_push.start()
+        self._watch = asyncio.create_task(self._watch_radio(), name="radio-watch")
         for a in self.addons:
             try:
                 a.start()
             except Exception as exc:  # noqa: BLE001
                 log.warning("add-on %s didn't start: %s", a.id, exc)
+
+    async def _watch_radio(self) -> None:
+        """Raise or clear the "station radio lost" alert every half minute."""
+        while True:
+            await asyncio.sleep(30)
+            try:
+                self.alerts.check_radio(self.radio)
+            except Exception:  # noqa: BLE001
+                log.exception("radio check failed")
 
     def _radio_key(self) -> tuple:
         c = self.cfg
@@ -134,6 +144,8 @@ class Station:
         return restart
 
     async def stop(self) -> None:
+        if getattr(self, "_watch", None):
+            self._watch.cancel()
         await self.radio.stop()
         for m in self.mqtt:
             m.stop()
