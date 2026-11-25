@@ -63,6 +63,15 @@ function IgnoredNodes({ onError }: { onError: (m: string) => void }) {
   );
 }
 
+const SECTIONS: [string, string][] = [
+  ["set-general", "General"],
+  ["set-radio", "Radio and mesh"],
+  ["set-fleet", "Fleet and alerts"],
+  ["set-terrain", "Coverage model"],
+  ["set-sharing", "Sharing"],
+  ["set-access", "Access"],
+];
+
 const CHANNEL_HELP = "Public, a #hashtag channel, or a private channel as Name=32 hex digits.";
 
 export default function Settings() {
@@ -81,15 +90,21 @@ export default function Settings() {
   const [haPw, setHaPw] = useState<string | null>(null);
   const [pgDsn, setPgDsn] = useState<string | null>(null);
   const [intMsg, setIntMsg] = useState("");
+  const [base, setBase] = useState("");
   const me = useMe();
 
   const load = () =>
     api("/api/settings")
-      .then((d) => (setS(d), setTok(null), setDiscord(null), setSecret(null), setMqttPw({}), setMetricsTok(null), setStatsTok(null), setHaPw(null), setPgDsn(null)))
+      .then((d) => (setS(d), setBase(JSON.stringify(d)), setTok(null), setDiscord(null), setSecret(null), setMqttPw({}), setMetricsTok(null), setStatsTok(null), setHaPw(null), setPgDsn(null)))
       .catch((e) => setErr(e.message));
   useEffect(() => {
     load();
   }, []);
+  const loaded = s !== null;
+  useEffect(() => {
+    const id = location.hash.slice(1);
+    if (loaded && id) requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: "start" }));
+  }, [loaded]);
 
   if (!s) return err ? <div className="err">{err}</div> : <div className="empty">Loading…</div>;
   const set = (path: string, value: unknown) => {
@@ -117,6 +132,7 @@ export default function Settings() {
       .then((r) => {
         if (token !== null) setToken(token);
         setS(r.settings);
+        setBase(JSON.stringify(r.settings));
         setTok(null);
         setDiscord(null);
         setSecret(null);
@@ -134,21 +150,33 @@ export default function Settings() {
   }
 
   const r = s.radio;
+  const secretsTyped = [token, discord, secret, metricsTok, statsTok, haPw, pgDsn].some((v) => v !== null) || Object.keys(mqttPw).length > 0;
+  const dirty = secretsTyped || JSON.stringify(s) !== base;
   return (
     <>
-      <div className="top">
-        <h1>Settings</h1>
-        <span style={{ flex: 1 }} />
-        <button onClick={load} disabled={busy}>Undo changes</button>
-        <button className="primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</button>
+      <div className="settop">
+        <div className="top">
+          <h1>Settings</h1>
+          <span style={{ flex: 1 }} />
+          {dirty && !busy && <span className="pill warn" role="status">Unsaved changes</span>}
+          <button onClick={load} disabled={busy || !dirty}>Undo changes</button>
+          <button className="primary" onClick={save} disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</button>
+        </div>
+        <nav className="jump" aria-label="Settings sections">
+          {SECTIONS.map(([id, label]) => (
+            <button key={id} type="button" className="small" onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}>{label}</button>
+          ))}
+        </nav>
+        {msg && <div className="note ok-note" role="status">{msg}</div>}
+        {err && <div className="note err-note" role="alert">{err}</div>}
       </div>
-      {msg && <div className="note ok-note" role="status" style={{ marginBottom: 12 }}>{msg}</div>}
-      {err && <div className="note err-note" role="alert" style={{ marginBottom: 12 }}>{err}</div>}
       {!getToken() && s.station.admin_token_set && (
         <div className="note" style={{ marginBottom: 12 }}>This station has an admin token. Enter it under Access to save changes from this browser.</div>
       )}
 
-      <div className="card">
+      <section className="setsec" id="set-general" aria-labelledby="set-general-h">
+        <h2 className="sechead" id="set-general-h">General</h2>
+      <div className="card" id="set-look">
         <h2>Look and units</h2>
         <div className="small muted" style={{ marginBottom: 10 }}>Changes right away and is saved in this browser.</div>
         <div className="row" role="radiogroup" aria-label="Distance units" style={{ marginBottom: 12 }}>
@@ -161,7 +189,29 @@ export default function Settings() {
       </div>
 
       {me?.is_admin && <UpdatesCard />}
+      <div className="grid2">
+        <div className="card">
+          <h2>Station</h2>
+          <div className="formgrid">
+            <Field label="Station name"><input value={s.station.name} onChange={(e) => set("station.name", e.target.value)} /></Field>
+            <Field label="Days to keep packets"><input type="number" value={s.station.packet_retention_days} onChange={(e) => set("station.packet_retention_days", Number(e.target.value))} /></Field>
+            <Field label="Days to keep fleet history"><input type="number" value={s.station.fleet_history_days} onChange={(e) => set("station.fleet_history_days", Number(e.target.value))} /></Field>
+            <Field label="Mark nodes stale after" hint="Nodes and observers not heard for this long are labelled stale and faded on the map.">
+              <select value={s.station.stale_after_hours} onChange={(e) => set("station.stale_after_hours", Number(e.target.value))}>
+                {(s.stale_choices_hours || [0, 1, 6, 24, 72, 168]).map((h: number) => (
+                  <option key={h} value={h}>{STALE_LABEL[h] ?? `${h} h`}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="small faint" style={{ marginTop: 8 }}>Settings file: <span className="mono">{s.config_path}</span></div>
+        </div>
 
+        <IgnoredNodes onError={setErr} />
+      </div>
+      </section>
+      <section className="setsec" id="set-radio" aria-labelledby="set-radio-h">
+        <h2 className="sechead" id="set-radio-h">Radio and mesh</h2>
       <div className="grid2">
         <RadioCard r={r} set={set} onSaved={(radio) => setS((x: S) => ({ ...x, radio }))} onError={setErr} />
 
@@ -193,6 +243,43 @@ export default function Settings() {
         </div>
 
         <div className="card">
+          <h2>MQTT brokers</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>Brokers carrying packets from observer radios elsewhere on the mesh.</div>
+          <div className="stack">
+            {s.mqtt.map((m: any, i: number) => {
+              const upd = (k: string, v: unknown) => set("mqtt", s.mqtt.map((x: any, j: number) => (j === i ? { ...x, [k]: v } : x)));
+              return (
+                <div key={i} className="subcard">
+                  <div className="formgrid">
+                    <Field label="Name"><input value={m.name} onChange={(e) => upd("name", e.target.value)} /></Field>
+                    <Field label="Address"><input value={m.host} onChange={(e) => upd("host", e.target.value)} /></Field>
+                    <Field label="Port"><input type="number" value={m.port} onChange={(e) => upd("port", Number(e.target.value))} /></Field>
+                    <Field label="Username"><input value={m.username} autoComplete="off" onChange={(e) => upd("username", e.target.value)} /></Field>
+                  </div>
+                  <Field label="Password">
+                    <Secret isSet={m.password_set} value={mqttPw[i] === undefined ? null : mqttPw[i]} onChange={(v) => setMqttPw((p) => ({ ...p, [i]: v }))} placeholder="Password" />
+                  </Field>
+                  <Field label="Topics" hint="One per line.">
+                    <textarea rows={2} className="mono" value={m.topics.join("\n")} onChange={(e) => upd("topics", e.target.value.split("\n").map((t) => t.trim()).filter(Boolean))} />
+                  </Field>
+                  <div className="row" style={{ justifyContent: "space-between" }}>
+                    <label className="row small"><input type="checkbox" checked={m.tls} onChange={(e) => upd("tls", e.target.checked)} /> Use TLS</label>
+                    <button type="button" className="danger" onClick={() => set("mqtt", s.mqtt.filter((_: any, j: number) => j !== i))}>Remove broker</button>
+                  </div>
+                </div>
+              );
+            })}
+            <button type="button" onClick={() => set("mqtt", [...s.mqtt, { name: `Broker ${s.mqtt.length + 1}`, host: "", port: 1883, username: "", password_set: false, tls: false, topics: ["meshcore/+/+/packets"] }])}>
+              Add a broker
+            </button>
+          </div>
+        </div>
+      </div>
+      </section>
+      <section className="setsec" id="set-fleet" aria-labelledby="set-fleet-h">
+        <h2 className="sechead" id="set-fleet-h">Fleet and alerts</h2>
+      <div className="grid2">
+        <div className="card">
           <h2>Fleet checks</h2>
           <div className="small muted" style={{ marginBottom: 10 }}>Every check goes over the air. Longer gaps save airtime on a busy mesh.</div>
           <div className="formgrid">
@@ -205,15 +292,50 @@ export default function Settings() {
         </div>
 
         <div className="card">
+          <h2>Alerts</h2>
+          <div className="stack">
+            <Field label="Discord webhook">
+              <Secret isSet={s.alerts.discord_webhook_set} value={discord} onChange={setDiscord} placeholder="https://discord.com/api/webhooks/…" />
+            </Field>
+            <Field label="Webhook URL" hint="Receives each alert as JSON.">
+              <input value={s.alerts.webhook_url} placeholder="https://example.com/hook" onChange={(e) => set("alerts.webhook_url", e.target.value)} />
+            </Field>
+            <Field label="Webhook signing secret" hint="Signs the JSON in an X-Notoryx-Signature header.">
+              <Secret isSet={s.alerts.webhook_secret_set} value={secret} onChange={setSecret} placeholder="Shared secret" />
+            </Field>
+            <Field label="Station radio lost after (minutes)" hint="Alert when the station's own radio stays disconnected this long. 0 = off.">
+              <input type="number" min={0} max={1440} value={s.alerts.radio_lost_minutes ?? 5} onChange={(e) => set("alerts.radio_lost_minutes", Number(e.target.value))} />
+            </Field>
+            <div className="row">
+              <button
+                type="button"
+                onClick={() =>
+                  api("/api/alerts/test", { method: "POST" })
+                    .then((res) => setMsg(Object.entries(res).map(([k, v]) => `${k === "discord" ? "Discord" : "Webhook"}: ${v ? "sent" : "failed"}`).join(" · ")))
+                    .catch((e) => setErr(e.message))
+                }
+              >
+                Send a test alert
+              </button>
+              <span className="small faint">Uses the saved settings.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </section>
+      <section className="setsec" id="set-terrain" aria-labelledby="set-terrain-h">
+        <h2 className="sechead" id="set-terrain-h">Coverage model</h2>
+      <div className="grid2">
+        <div className="card">
           <h2>Terrain and radio model</h2>
           <div className="small muted" style={{ marginBottom: 10 }}>
             Used by Coverage → Terrain, Link profile and Plan relays. Set these to match your radios so predictions are close.
           </div>
           <div className="formgrid">
-            <Field label="Elevation data" hint="Downloads on first use of an area.">
+            <Field label="Elevation data" hint="Copernicus DEM. Downloads on first use of an area: about 5 MB (90 m) or 40 MB (30 m) per tile.">
               <select value={s.terrain.source} onChange={(e) => set("terrain.source", e.target.value)}>
-                <option value="glo90">Copernicus GLO-90 (90 m, ~5 MB per tile)</option>
-                <option value="glo30">Copernicus GLO-30 (30 m, ~40 MB per tile)</option>
+                <option value="glo90">90 m grid (smaller)</option>
+                <option value="glo30">30 m grid (sharper)</option>
               </select>
             </Field>
             <Field label="Frequency (MHz)"><input type="number" step="0.001" value={s.terrain.freq_mhz} onChange={(e) => set("terrain.freq_mhz", Number(e.target.value))} /></Field>
@@ -238,23 +360,11 @@ export default function Settings() {
             </Field>
           </div>
         </div>
-
-        <div className="card">
-          <h2>Exports and metrics</h2>
-          <div className="small muted" style={{ marginBottom: 10 }}>Download what the station knows, or let Prometheus read it.</div>
-          <div className="row" style={{ marginBottom: 10 }}>
-            <a className="btn" href="/api/export/nodes.geojson">Nodes (GeoJSON)</a>
-            <a className="btn" href="/api/export/links.geojson">Links (GeoJSON)</a>
-            <a className="btn" href="/api/export/nodes.gpx">Nodes (GPX)</a>
-          </div>
-          <Field label="Prometheus" hint={me?.accounts_on ? "With accounts on, Prometheus needs this token as a bearer token." : "Open to anyone who can reach the dashboard. Turn accounts on to protect it."}>
-            <span className="mono small">{location.origin}/metrics</span>
-          </Field>
-          <Field label="Metrics token">
-            <Secret isSet={s.integrations.metrics_token_set} value={metricsTok} onChange={setMetricsTok} placeholder="12+ characters" />
-          </Field>
-        </div>
-
+      </div>
+      </section>
+      <section className="setsec" id="set-sharing" aria-labelledby="set-sharing-h">
+        <h2 className="sechead" id="set-sharing-h">Sharing and integrations</h2>
+      <div className="grid2">
         <div className="card">
           <h2>Public map</h2>
           <div className="small muted" style={{ marginBottom: 10 }}>
@@ -275,9 +385,8 @@ export default function Settings() {
         <div className="card">
           <h2>Live network stats</h2>
           <div className="small muted" style={{ marginBottom: 10 }}>
-            Every 15 minutes, sends counts for the last 7 days (repeaters, nodes, countries, links) to a stats relay for a public "live network" page.
-            Nodes go as the first 8 characters of their public key with a country code, so two stations never count one node twice. No names, positions, messages or fleet data are sent.
-            Ignored nodes are left out. Your own counts are at <a href="/api/public/stats">/api/public/stats</a> while the public map or sharing is on.
+            Every 15 minutes, sends 7-day counts (repeaters, nodes, countries, links) to a stats relay for a public "live network" page.
+            Only a short key prefix and country code per node are sent, never names, positions, messages or fleet data. Ignored nodes are left out.
           </div>
           <div className="formgrid">
             <Field label="Share stats"><input type="checkbox" checked={!!s.integrations.stats_push} onChange={(e) => set("integrations.stats_push", e.target.checked)} /></Field>
@@ -288,6 +397,22 @@ export default function Settings() {
             <button type="button" onClick={() => api<any>("/api/integrations/stats/push", { method: "POST" }).then((r) => setIntMsg(`Sent: ${r.sent.repeaters} repeaters, ${r.sent.nodes} nodes, ${r.sent.countries} countries, ${r.sent.links} links.`)).catch((e) => setIntMsg(e.message))}>Send now</button>
             <span className="small faint">Save first.</span>
           </div>
+        </div>
+
+        <div className="card">
+          <h2>Exports and metrics</h2>
+          <div className="small muted" style={{ marginBottom: 10 }}>Download what the station knows, or let Prometheus read it.</div>
+          <div className="row" style={{ marginBottom: 10 }}>
+            <a className="btn" href="/api/export/nodes.geojson">Nodes (GeoJSON)</a>
+            <a className="btn" href="/api/export/links.geojson">Links (GeoJSON)</a>
+            <a className="btn" href="/api/export/nodes.gpx">Nodes (GPX)</a>
+          </div>
+          <Field label="Prometheus" hint={me?.accounts_on ? "With accounts on, Prometheus needs this token as a bearer token." : "Open to anyone who can reach the dashboard. Turn accounts on to protect it."}>
+            <span className="mono small">{location.origin}/metrics</span>
+          </Field>
+          <Field label="Metrics token">
+            <Secret isSet={s.integrations.metrics_token_set} value={metricsTok} onChange={setMetricsTok} placeholder="12+ characters" />
+          </Field>
         </div>
 
         <div className="card">
@@ -326,90 +451,11 @@ export default function Settings() {
           </div>
           {intMsg && <div className="small" role="status" style={{ marginTop: 6 }}>{intMsg}</div>}
         </div>
-
-        <div className="card">
-          <h2>Alerts</h2>
-          <div className="stack">
-            <Field label="Discord webhook">
-              <Secret isSet={s.alerts.discord_webhook_set} value={discord} onChange={setDiscord} placeholder="https://discord.com/api/webhooks/…" />
-            </Field>
-            <Field label="Webhook URL" hint="Receives each alert as JSON.">
-              <input value={s.alerts.webhook_url} placeholder="https://example.com/hook" onChange={(e) => set("alerts.webhook_url", e.target.value)} />
-            </Field>
-            <Field label="Webhook signing secret" hint="Signs the JSON in an X-Notoryx-Signature header.">
-              <Secret isSet={s.alerts.webhook_secret_set} value={secret} onChange={setSecret} placeholder="Shared secret" />
-            </Field>
-            <Field label="Station radio lost after (minutes)" hint="Alert when the station's own radio stays disconnected this long. 0 = off.">
-              <input type="number" min={0} max={1440} value={s.alerts.radio_lost_minutes ?? 5} onChange={(e) => set("alerts.radio_lost_minutes", Number(e.target.value))} />
-            </Field>
-            <div className="row">
-              <button
-                type="button"
-                onClick={() =>
-                  api("/api/alerts/test", { method: "POST" })
-                    .then((res) => setMsg(Object.entries(res).map(([k, v]) => `${k === "discord" ? "Discord" : "Webhook"}: ${v ? "sent" : "failed"}`).join(" · ")))
-                    .catch((e) => setErr(e.message))
-                }
-              >
-                Send a test alert
-              </button>
-              <span className="small faint">Uses the saved settings.</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <h2>MQTT brokers</h2>
-          <div className="small muted" style={{ marginBottom: 10 }}>Brokers carrying packets from observer radios elsewhere on the mesh.</div>
-          <div className="stack">
-            {s.mqtt.map((m: any, i: number) => {
-              const upd = (k: string, v: unknown) => set("mqtt", s.mqtt.map((x: any, j: number) => (j === i ? { ...x, [k]: v } : x)));
-              return (
-                <div key={i} className="subcard">
-                  <div className="formgrid">
-                    <Field label="Name"><input value={m.name} onChange={(e) => upd("name", e.target.value)} /></Field>
-                    <Field label="Address"><input value={m.host} onChange={(e) => upd("host", e.target.value)} /></Field>
-                    <Field label="Port"><input type="number" value={m.port} onChange={(e) => upd("port", Number(e.target.value))} /></Field>
-                    <Field label="Username"><input value={m.username} autoComplete="off" onChange={(e) => upd("username", e.target.value)} /></Field>
-                  </div>
-                  <Field label="Password">
-                    <Secret isSet={m.password_set} value={mqttPw[i] === undefined ? null : mqttPw[i]} onChange={(v) => setMqttPw((p) => ({ ...p, [i]: v }))} placeholder="Password" />
-                  </Field>
-                  <Field label="Topics" hint="One per line.">
-                    <textarea rows={2} className="mono" value={m.topics.join("\n")} onChange={(e) => upd("topics", e.target.value.split("\n").map((t) => t.trim()).filter(Boolean))} />
-                  </Field>
-                  <div className="row" style={{ justifyContent: "space-between" }}>
-                    <label className="row small"><input type="checkbox" checked={m.tls} onChange={(e) => upd("tls", e.target.checked)} /> Use TLS</label>
-                    <button type="button" className="danger" onClick={() => set("mqtt", s.mqtt.filter((_: any, j: number) => j !== i))}>Remove broker</button>
-                  </div>
-                </div>
-              );
-            })}
-            <button type="button" onClick={() => set("mqtt", [...s.mqtt, { name: `Broker ${s.mqtt.length + 1}`, host: "", port: 1883, username: "", password_set: false, tls: false, topics: ["meshcore/+/+/packets"] }])}>
-              Add a broker
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <h2>Station</h2>
-          <div className="formgrid">
-            <Field label="Station name"><input value={s.station.name} onChange={(e) => set("station.name", e.target.value)} /></Field>
-            <Field label="Days to keep packets"><input type="number" value={s.station.packet_retention_days} onChange={(e) => set("station.packet_retention_days", Number(e.target.value))} /></Field>
-            <Field label="Days to keep fleet history"><input type="number" value={s.station.fleet_history_days} onChange={(e) => set("station.fleet_history_days", Number(e.target.value))} /></Field>
-            <Field label="Mark nodes stale after" hint="Nodes and observers not heard for this long are labelled stale and faded on the map.">
-              <select value={s.station.stale_after_hours} onChange={(e) => set("station.stale_after_hours", Number(e.target.value))}>
-                {(s.stale_choices_hours || [0, 1, 6, 24, 72, 168]).map((h: number) => (
-                  <option key={h} value={h}>{STALE_LABEL[h] ?? `${h} h`}</option>
-                ))}
-              </select>
-            </Field>
-          </div>
-          <div className="small faint" style={{ marginTop: 8 }}>Settings file: <span className="mono">{s.config_path}</span></div>
-        </div>
-
-        <IgnoredNodes onError={setErr} />
-
+      </div>
+      </section>
+      <section className="setsec" id="set-access" aria-labelledby="set-access-h">
+        <h2 className="sechead" id="set-access-h">Access and accounts</h2>
+      <div className="grid2">
         <div className="card">
           <h2>Access</h2>
           <div className="small muted" style={{ marginBottom: 10 }}>
@@ -435,13 +481,8 @@ export default function Settings() {
         </div>
       </div>
       <Accounts me={me} />
+      </section>
 
-      <div className="row" style={{ justifyContent: "flex-end", marginTop: 4 }}>
-        {msg && <span className="small" style={{ color: "var(--ok)" }} role="status">{msg}</span>}
-        {err && <span className="small" style={{ color: "var(--bad)" }} role="alert">{err}</span>}
-        <button onClick={load} disabled={busy}>Undo changes</button>
-        <button className="primary" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</button>
-      </div>
     </>
   );
 }

@@ -18,19 +18,11 @@ import Survey from "./pages/Survey";
 import PublicMap from "./pages/PublicMap";
 import { signOut, useMe } from "./auth";
 
-const NAV: [string, string][] = [
-  ["/", "Live map"],
-  ["/packets", "Packets"],
-  ["/nodes", "Nodes"],
-  ["/channels", "Channels"],
-  ["/fleet", "My fleet"],
-  ["/observers", "Observers"],
-  ["/coverage", "Coverage"],
-  ["/field", "Field work"],
-  ["/analytics", "Analytics"],
-  ["/alerts", "Alerts"],
-  ["/station", "Station"],
-  ["/settings", "Settings"],
+const NAV: [string, [string, string][]][] = [
+  ["Live", [["/", "Live map"], ["/packets", "Packets"], ["/nodes", "Nodes"], ["/channels", "Channels"]]],
+  ["Network", [["/observers", "Observers"], ["/coverage", "Coverage"], ["/analytics", "Analytics"], ["/field", "Field work"]]],
+  ["Fleet", [["/fleet", "My fleet"], ["/alerts", "Alerts"]]],
+  ["System", [["/station", "Station"], ["/settings", "Settings"]]],
 ];
 
 export default function App() {
@@ -61,17 +53,27 @@ function Dashboard() {
           <img src="/icon.svg" alt="" />
           <span>NOTORYX Ops</span>
         </div>
-        {NAV.map(([to, label]) => (
-          <NavLink key={to} to={to} end={to === "/"}>
-            {label}
-            {to === "/alerts" && open && open.length > 0 && <span className="count pill warn">{open.length}</span>}
-          </NavLink>
+        {NAV.map(([group, items]) => (
+          <div key={group} className="navgroup" role="group" aria-labelledby={`nav-${group}`}>
+            <div className="navhead" id={`nav-${group}`}>{group}</div>
+            {items.map(([to, label]) => (
+              <NavLink key={to} to={to} end={to === "/"}>
+                {label}
+                {to === "/alerts" && open && open.length > 0 && <span className="count pill warn">{open.length}</span>}
+              </NavLink>
+            ))}
+          </div>
         ))}
-        {(addons || []).filter((a) => a.page).map((a) => (
-          <a key={a.id} href={a.page} title={`Add-on, ${a.license}`}>
-            {a.name}
-          </a>
-        ))}
+        {(addons || []).some((a) => a.page) && (
+          <div className="navgroup" role="group" aria-labelledby="nav-addons">
+            <div className="navhead" id="nav-addons">Add-ons</div>
+            {(addons || []).filter((a) => a.page).map((a) => (
+              <a key={a.id} href={a.page} title={`Add-on, ${a.license}`}>
+                {a.name}
+              </a>
+            ))}
+          </div>
+        )}
         <div className="foot">
           <LookButton />
           <div style={{ marginTop: 8 }}>{info?.name || "Station"}</div>

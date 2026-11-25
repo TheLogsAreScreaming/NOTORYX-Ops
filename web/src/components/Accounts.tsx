@@ -43,8 +43,8 @@ export default function Accounts({ me }: { me: Me | null }) {
       <h2>Accounts</h2>
       {!on ? (
         <div className="small muted" style={{ marginBottom: 10 }}>
-          Off: anyone who can open the dashboard can look, and changes need the admin token or this computer. Create the first admin
-          account to require a sign-in for everything except the public map. The admin token keeps working for scripts.
+          Off: anyone who can open the dashboard can look; changes need the admin token or this computer. Create an admin account to
+          require a sign-in everywhere except the public map. The admin token still works for scripts.
         </div>
       ) : (
         <div className="small muted" style={{ marginBottom: 10 }}>
