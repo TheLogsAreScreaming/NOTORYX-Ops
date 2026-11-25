@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ago, api, clock, useApi, useLive } from "../api";
-import { decodeMessage, isSarneg, loadKeys, parseKeys, saveKeys, wordFor, type SarnegKeys } from "../sarneg";
+import { decodeMessage, encode, isSarneg, loadKeys, parseKeys, SARNEG_MARKER, saveKeys, wordFor, type SarnegKeys } from "../sarneg";
+import { useMe } from "../auth";
 
 type Msg = { id?: number; channel: string; sender: string | null; text: string; received_at: number; hops: number };
 
@@ -78,9 +79,64 @@ export default function Channels() {
               </div>
             ))}
           </div>
+          {channel && <Compose channel={channel} keys={keys} />}
         </div>
       </div>
     </>
+  );
+}
+
+const MAX_BYTES = 140;
+
+/** Send a message on the selected channel through the station radio, optionally as SARNEG numbers. */
+function Compose({ channel, keys }: { channel: string; keys: SarnegKeys | null }) {
+  const me = useMe();
+  const [text, setText] = useState("");
+  const [asSarneg, setAsSarneg] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  if (!me?.can_change) return null;
+
+  const word = keys ? wordFor(keys, Date.now()) : null;
+  const out = asSarneg && word ? `${SARNEG_MARKER} ${encode(text.trim(), word)}` : text.trim();
+  const bytes = new TextEncoder().encode(out).length;
+  const tooLong = bytes > MAX_BYTES;
+
+  function send(e: React.FormEvent) {
+    e.preventDefault();
+    if (!out || tooLong || busy) return;
+    setBusy(true);
+    setNote(null);
+    api("/api/channels/send", { method: "POST", body: { channel, text: out } })
+      .then(() => {
+        setText("");
+        setNote({ ok: true, text: "Sent. It shows up above when a repeater passes it back to the station." });
+      })
+      .catch((err) => setNote({ ok: false, text: err.message }))
+      .finally(() => setBusy(false));
+  }
+
+  return (
+    <form className="compose" onSubmit={send}>
+      <div className="row" style={{ alignItems: "flex-end" }}>
+        <label className="field" style={{ flex: 1, minWidth: 200 }}>
+          <span className="flabel">Send on {channel}</span>
+          <input value={text} maxLength={300} placeholder={asSarneg ? "Numbers to code, e.g. 17S 4823" : "Message"} onChange={(e) => setText(e.target.value)} />
+        </label>
+        <button type="submit" className="primary" disabled={busy || !out || tooLong}>{busy ? "Sending…" : "Send"}</button>
+      </div>
+      <div className="row small" style={{ marginTop: 6 }}>
+        <label className="row" style={{ gap: 6 }}>
+          <input type="checkbox" checked={asSarneg} disabled={!word} onChange={(e) => setAsSarneg(e.target.checked)} />
+          Send numbers as SARNEG
+        </label>
+        {!word && <span className="faint">Set a code word in the SARNEG card to use this.</span>}
+        <span className={tooLong ? "err" : "faint"} style={{ marginLeft: "auto" }}>{bytes}/{MAX_BYTES}</span>
+      </div>
+      {asSarneg && word && text.trim() && <div className="small faint mono" style={{ marginTop: 4 }}>Goes out as: {out}</div>}
+      {note && <div className={`small ${note.ok ? "" : "err"}`} style={{ marginTop: 4 }}>{note.text}</div>}
+      <div className="small faint" style={{ marginTop: 4 }}>Everyone with this channel's key can read it. SARNEG hides numbers from casual readers but is not encryption.</div>
+    </form>
   );
 }
 
