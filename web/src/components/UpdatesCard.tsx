@@ -57,19 +57,32 @@ export default function UpdatesCard() {
     load();
   }, []);
 
+  const [dl, setDl] = useState<{ state: string; bytes?: number; total?: number | null; version?: string; path?: string; error?: string } | null>(null);
+
   async function updateApp() {
     setBusy("app");
-    setNote("Downloading and checking the new version…");
+    setErr(null);
+    setNote("");
     try {
-      const r = await api<any>("/api/updates/download", { method: "POST" });
-      setNote(`Installing ${r.version}. NOTORYX Ops will close and open again in a moment.`);
-      (window as any).webkit.messageHandlers.notoryxUpdate.postMessage(r.path);
+      let p = await api<any>("/api/updates/download", { method: "POST" });
+      setDl(p);
+      while (p.state === "downloading" || p.state === "checking") {
+        await new Promise((r) => setTimeout(r, 400));
+        p = await api<any>("/api/updates/progress");
+        setDl(p);
+      }
+      if (p.state !== "ready") throw new Error(p.error || "The download didn't finish.");
+      setNote(`Installing ${p.version}. NOTORYX Ops will close and open again in a moment.`);
+      (window as any).webkit.messageHandlers.notoryxUpdate.postMessage(p.path);
     } catch (e: any) {
       setErr(e.message);
-      setNote("");
+      setDl(null);
       setBusy(null);
     }
   }
+
+  const mb = (n?: number | null) => (n ? (n / 1048576).toFixed(1) : "0");
+  const pct = dl?.total ? Math.min(100, Math.round(((dl.bytes || 0) / dl.total) * 100)) : null;
 
   async function addon(a: Addon, action: "install" | "remove") {
     setBusy(a.id);
@@ -119,6 +132,18 @@ export default function UpdatesCard() {
                   : <a href={s.latest.url} target="_blank" rel="noreferrer"><button type="button" className="primary">Open the release page</button></a>}
                 <a className="small" href={s.latest.url} target="_blank" rel="noreferrer">Full notes</a>
               </div>
+              {dl && dl.state !== "idle" && (
+                <div className="stack" style={{ gap: 4 }}>
+                  <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined} aria-label="Update download">
+                    <i style={{ width: `${dl.state === "ready" ? 100 : pct ?? 5}%` }} className={pct == null && dl.state === "downloading" ? "busy" : ""} />
+                  </div>
+                  <div className="small faint">
+                    {dl.state === "downloading" && `Downloading ${dl.version}: ${mb(dl.bytes)}${dl.total ? ` of ${mb(dl.total)} MB (${pct}%)` : " MB"}`}
+                    {dl.state === "checking" && "Checking the download against its checksum…"}
+                    {dl.state === "ready" && "Checked. Installing…"}
+                  </div>
+                </div>
+              )}
               {inMacApp() && <div className="small faint">Add-ons stay installed. The app closes and opens again on its own.</div>}
             </div>
           )}

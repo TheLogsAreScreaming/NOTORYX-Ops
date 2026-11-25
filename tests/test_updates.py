@@ -90,3 +90,12 @@ def test_update_endpoints_need_admin(tmp_path, monkeypatch):
         assert ok.status_code == 200 and ok.json()["newer"]
         nothing = c.post("/api/updates/download", headers={"Authorization": "Bearer a-long-token-123"})
         assert nothing.status_code == 409  # no Mac app in that release
+
+
+def test_download_reports_progress(monkeypatch, tmp_path):
+    good = b"x" * 200_000
+    sums = f"{hashlib.sha256(good).hexdigest()}  notoryx-ops-99.0.0-mac.zip\n".encode()
+    serve(monkeypatch, {"notoryx-ops-99.0.0-mac.zip": good, "SHA256SUMS": sums})
+    seen = []
+    updates.download("notoryx-ops-99.0.0-mac.zip", tmp_path, lambda done, total: seen.append(done))
+    assert seen and seen[-1] == len(good) and seen == sorted(seen)

@@ -43,6 +43,19 @@ func run(_ exe: String, _ args: [String], log: FileHandle? = nil) -> (status: In
     return (p.terminationStatus, String(data: data, encoding: .utf8) ?? "")
 }
 
+/// Asks a station process to stop, waits up to `seconds`, then makes sure it is gone.
+/// A station that hangs on the way out must never block an update, a restart or Quit.
+func stopProcess(_ p: Process, seconds: Double = 8) {
+    guard p.isRunning else { return }
+    p.interrupt()
+    let deadline = Date().addingTimeInterval(seconds)
+    while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+    if p.isRunning {
+        kill(p.processIdentifier, SIGKILL)
+        p.waitUntilExit()
+    }
+}
+
 func openLog() -> FileHandle? {
     try? FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
     if !FileManager.default.fileExists(atPath: logURL.path) {
@@ -83,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     var web: WKWebView!
     var status: NSTextField!
     var spinner: NSProgressIndicator!
+    var bar: NSProgressIndicator!
     var station: Process?
     var port = 8484
     /// Set by Stop Station so any exit code counts as a clean stop.
@@ -105,10 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     func applicationWillTerminate(_ note: Notification) {
         quitting = true
         guard let p = station, p.isRunning else { return }
-        p.interrupt()
-        let deadline = Date().addingTimeInterval(6)
-        while p.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
-        if p.isRunning { p.terminate() }
+        stopProcess(p, seconds: 6)
     }
 
     // MARK: window
@@ -148,9 +159,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         status.textColor = .secondaryLabelColor
         status.alignment = .center
         status.translatesAutoresizingMaskIntoConstraints = false
+        bar = NSProgressIndicator()
+        bar.style = .bar
+        bar.isIndeterminate = false
+        bar.minValue = 0
+        bar.maxValue = 1
+        bar.isHidden = true
+        bar.translatesAutoresizingMaskIntoConstraints = false
         content.addSubview(spinner)
         content.addSubview(status)
+        content.addSubview(bar)
         NSLayoutConstraint.activate([
+            bar.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            bar.topAnchor.constraint(equalTo: status.bottomAnchor, constant: 14),
+            bar.widthAnchor.constraint(equalToConstant: 320),
             spinner.centerXAnchor.constraint(equalTo: content.centerXAnchor),
             spinner.centerYAnchor.constraint(equalTo: content.centerYAnchor, constant: -16),
             status.centerXAnchor.constraint(equalTo: content.centerXAnchor),
@@ -167,6 +189,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             self.status.stringValue = text
             self.status.isHidden = false
             self.spinner.isHidden = !spinning
+            self.bar.isHidden = true
+            self.web.isHidden = true
+        }
+    }
+
+    /// Status text with a progress bar, for the steps of an update.
+    func setProgress(_ text: String, step: Int, of total: Int) {
+        DispatchQueue.main.async {
+            self.status.stringValue = "\(text)  (step \(step) of \(total))"
+            self.status.isHidden = false
+            self.spinner.isHidden = true
+            self.bar.isHidden = false
+            self.bar.doubleValue = Double(step - 1) / Double(total)
             self.web.isHidden = true
         }
     }
@@ -222,6 +257,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         port = Int(portOut.out.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 8484
 
         if !stationAnswers() {
+            // A station left behind by an earlier run that hung on its way out can still hold the radio.
+            _ = run("/usr/bin/pkill", ["-9", "-f", venvDir.appendingPathComponent("bin/notoryx-ops").path])
             setStatus("Starting the station…")
             let p = Process()
             p.executableURL = venvDir.appendingPathComponent("bin/notoryx-ops")
@@ -315,18 +352,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             try? FileManager.default.removeItem(at: work)
             self.fail("The update couldn't be installed: \(why). The current version keeps running.")
         }
-        setStatus("Installing the update…")
+        let steps = 5
+        setProgress("Unpacking the update…", step: 1, of: steps)
         DispatchQueue.global(qos: .userInitiated).async {
             try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
             guard run("/usr/bin/ditto", ["-x", "-k", zip.path, work.path]).status == 0 else { return failUpdate("unpacking failed") }
+            self.setProgress("Checking the new version…", step: 2, of: steps)
             let fresh = work.appendingPathComponent("NOTORYX Ops.app")
             let plist = NSDictionary(contentsOf: fresh.appendingPathComponent("Contents/Info.plist"))
             guard plist?["CFBundleIdentifier"] as? String == Bundle.main.bundleIdentifier else { return failUpdate("it isn't NOTORYX Ops") }
             guard run("/usr/bin/codesign", ["-v", fresh.path]).status == 0 else { return failUpdate("its signature didn't check out") }
             _ = run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", fresh.path])
             // Stop the station before swapping, so nothing runs from the old copy.
+            self.setProgress("Stopping the station…", step: 3, of: steps)
             self.quitting = true
-            if let p = self.station, p.isRunning { p.interrupt(); p.waitUntilExit() }
+            if let p = self.station { stopProcess(p) }
+            self.setProgress("Putting the new version in place…", step: 4, of: steps)
             let old = work.appendingPathComponent("previous.app")
             do {
                 try FileManager.default.moveItem(at: current, to: old)
@@ -337,6 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 return failUpdate(error.localizedDescription)
             }
             try? FileManager.default.removeItem(at: zip)
+            self.setProgress("Opening the new version…", step: 5, of: steps)
             let relaunch = Process()
             relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
             relaunch.arguments = ["-c", "sleep 1; /usr/bin/open -n \"$0\"", current.path]
@@ -348,8 +390,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     @objc func restartStation(_ sender: Any?) {
         quitting = true
         if let p = station, p.isRunning {
-            p.interrupt()
-            p.waitUntilExit()
+            stopProcess(p)
         }
         station = nil
         quitting = false
