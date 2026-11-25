@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS repeaters (
   password TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
   enabled INTEGER NOT NULL DEFAULT 1,
+  watch_only INTEGER NOT NULL DEFAULT 0,
   added_at REAL NOT NULL
 );
 
@@ -170,6 +171,10 @@ class Store:
             if "last_advert" not in cols:
                 self.db.execute("ALTER TABLE nodes ADD COLUMN last_advert REAL")
                 self.db.execute("UPDATE nodes SET last_advert = last_seen")
+        if "repeaters" in tables:
+            cols = {r[1] for r in self.db.execute("PRAGMA table_info(repeaters)")}
+            if "watch_only" not in cols:
+                self.db.execute("ALTER TABLE repeaters ADD COLUMN watch_only INTEGER NOT NULL DEFAULT 0")
 
     def _migrate(self) -> None:
         """Record the schema version. Each step brings a database up from the version before it.

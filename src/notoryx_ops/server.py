@@ -44,6 +44,7 @@ class RepeaterIn(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     password: str = Field(default="", max_length=64)
     notes: str = Field(default="", max_length=500)
+    watch_only: bool = False
 
 
 class RepeaterPatch(BaseModel):
@@ -51,6 +52,7 @@ class RepeaterPatch(BaseModel):
     password: str | None = Field(default=None, max_length=64)
     notes: str | None = Field(default=None, max_length=500)
     enabled: bool | None = None
+    watch_only: bool | None = None
 
 
 class BulkIn(BaseModel):
@@ -634,7 +636,7 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.post("/api/fleet", dependencies=[Depends(operator)])
     def fleet_add(body: RepeaterIn):
         try:
-            rid = st.fleet.add(body.public_key, body.name, body.password, body.notes)
+            rid = st.fleet.add(body.public_key, body.name, body.password, body.notes, body.watch_only)
         except Exception as exc:
             if "UNIQUE" in str(exc):
                 raise HTTPException(409, "That repeater is already in your fleet.") from exc
@@ -644,8 +646,9 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.patch("/api/fleet/{rid}", dependencies=[Depends(operator)])
     def fleet_update(rid: int, body: RepeaterPatch):
         fields: dict[str, Any] = body.model_dump()
-        if fields.get("enabled") is not None:
-            fields["enabled"] = int(fields["enabled"])
+        for flag in ("enabled", "watch_only"):
+            if fields.get(flag) is not None:
+                fields[flag] = int(fields[flag])
         st.fleet.update(rid, **fields)
         return {"ok": True}
 

@@ -7,6 +7,7 @@ repeaters, poll_minutes between rounds) and the costlier checks run less often.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -83,18 +84,18 @@ class Fleet:
                 "poll_minutes": self.cfg.poll_minutes, "stagger_seconds": self.cfg.stagger_seconds}
 
     # ---- repeaters list ---------------------------------------------------
-    def add(self, public_key: str, name: str, password: str = "", notes: str = "") -> int:
+    def add(self, public_key: str, name: str, password: str = "", notes: str = "", watch_only: bool = False) -> int:
         if not KEY_RE.match(public_key):
             raise ValueError("Public key must be 64 hex characters.")
         rid = self.store.ins(
-            "INSERT INTO repeaters(public_key, name, password, notes, added_at) VALUES (?,?,?,?,?)",
-            (public_key.lower(), name.strip() or public_key[:8], password, notes, time.time()),
+            "INSERT INTO repeaters(public_key, name, password, notes, watch_only, added_at) VALUES (?,?,?,?,?,?)",
+            (public_key.lower(), name.strip() or public_key[:8], "" if watch_only else password, notes, int(watch_only), time.time()),
         )
         self.store.audit("repeater_add", {"public_key": public_key, "name": name})
         return rid
 
     def update(self, rid: int, **fields: Any) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("name", "password", "notes", "enabled") and v is not None}
+        allowed = {k: v for k, v in fields.items() if k in ("name", "password", "notes", "enabled", "watch_only") and v is not None}
         if not allowed:
             return
         sets = ", ".join(f"{k} = ?" for k in allowed)
@@ -117,10 +118,35 @@ class Fleet:
                                 " ORDER BY polled_at DESC LIMIT 1", (r["id"],))
             alerts = self.store.q("SELECT kind, severity, message FROM alerts WHERE subject = ? AND resolved_at IS NULL",
                                   (r["public_key"],))
-            out.append({**r, "last_poll": last, "last_ok": ok, "node": node,
+            out.append({**r, "last_poll": last, "last_ok": ok, "node": node, "relay": self.relay_stats(r["public_key"], now),
                         "firmware": (fw or {}).get("firmware"), "alerts": alerts,
                         "last_heard": max([t for t in ((node or {}).get("last_advert"), (ok or {}).get("polled_at")) if t] or [0]) or None,
                         "now": now})
+        return out
+
+    def relay_stats(self, public_key: str, now: float) -> dict[str, Any]:
+        """What the station heard of a repeater without asking it anything: packets it passed on in the last
+        24 hours and the hops next to it in those paths. Short prefixes can be shared, so this is an estimate."""
+        out: dict[str, Any] = {"packets_24h": 0, "last_relay": None, "neighbours": []}
+        rows = self.store.q("SELECT hash, received_at, path, hash_size FROM packets WHERE received_at >= ? AND hops > 0"
+                            " AND path LIKE ?", (now - 86400, f'%"{public_key[:2].lower()}%'))
+        seen, nb = set(), {}
+        for r in rows:
+            try:
+                path = json.loads(r["path"])
+            except ValueError:
+                continue
+            want = public_key[: 2 * (r["hash_size"] or 1)].lower()
+            for i, hop in enumerate(path):
+                if hop.lower() != want:
+                    continue
+                seen.add(r["hash"])
+                out["last_relay"] = max(out["last_relay"] or 0, r["received_at"])
+                for j in (i - 1, i + 1):
+                    if 0 <= j < len(path) and path[j].lower() != want:
+                        nb[path[j].lower()] = nb.get(path[j].lower(), 0) + 1
+        out["packets_24h"] = len(seen)
+        out["neighbours"] = [{"prefix": p, "packets": n} for p, n in sorted(nb.items(), key=lambda x: -x[1])[:8]]
         return out
 
     # ---- polling ----------------------------------------------------------
@@ -137,7 +163,7 @@ class Fleet:
         await asyncio.sleep(20)
         while True:
             try:
-                if self.radio.connected and any(r["enabled"] for r in self.store.repeaters()):
+                if self.radio.connected and any(r["enabled"] and not r.get("watch_only") for r in self.store.repeaters()):
                     await self.poll_round()
                 self.alerts.evaluate()
                 self.store.prune(self.cfg.packet_retention_days, self.cfg.fleet_history_days)
@@ -157,7 +183,7 @@ class Fleet:
             self.polling = True
             self.hub.publish({"type": "fleet", "polling": True})
             try:
-                reps = [r for r in self.store.repeaters(include_password=True) if r["enabled"]]
+                reps = [r for r in self.store.repeaters(include_password=True) if r["enabled"] and not r.get("watch_only")]
                 for n, rep in enumerate(reps):
                     if n:
                         await asyncio.sleep(self.cfg.stagger_seconds)
