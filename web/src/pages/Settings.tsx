@@ -3,6 +3,7 @@ import { ago, api, getToken, setToken, unignoreNode, useApi } from "../api";
 import { LookGallery } from "../components/ThemePicker";
 import Accounts from "../components/Accounts";
 import RadioCard from "../components/RadioCard";
+import UpdatesCard from "../components/UpdatesCard";
 import { useMe } from "../auth";
 
 type S = any;
@@ -150,6 +151,8 @@ export default function Settings() {
         <div className="small muted" style={{ marginBottom: 10 }}>Changes right away and is saved on this computer.</div>
         <LookGallery />
       </div>
+
+      {me?.is_admin && <UpdatesCard />}
 
       <div className="grid2">
         <RadioCard r={r} set={set} onSaved={(radio) => setS((x: S) => ({ ...x, radio }))} onError={setErr} />

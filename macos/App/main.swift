@@ -62,6 +62,22 @@ final class CopyHandler: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// Swaps this app for a newer one the station has downloaded and checked, then relaunches.
+/// Only accepts a zip in the station's own updates folder.
+final class UpdateHandler: NSObject, WKScriptMessageHandler {
+    weak var app: AppDelegate?
+    init(app: AppDelegate) { self.app = app }
+
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let path = message.body as? String else { return }
+        let zip = URL(fileURLWithPath: path).standardizedFileURL
+        let allowed = supportDir.standardizedFileURL.path + "/"
+        guard zip.path.hasPrefix(allowed), zip.path.contains("/updates/"), zip.lastPathComponent.hasSuffix("-mac.zip"),
+              FileManager.default.fileExists(atPath: zip.path) else { return }
+        app?.installUpdate(zip)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, NSWindowDelegate {
     var window: NSWindow!
     var web: WKWebView!
@@ -110,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         cfg.applicationNameForUserAgent = "NOTORYXOpsApp/1"
         // The web view has no clipboard access of its own; pages copy through this handler.
         cfg.userContentController.add(CopyHandler(), name: "notoryxCopy")
+        cfg.userContentController.add(UpdateHandler(app: self), name: "notoryxUpdate")
         web = WKWebView(frame: frame, configuration: cfg)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -213,6 +230,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 guard let self = self, !self.quitting else { return }
                 if proc.terminationStatus == 0 {
                     self.stopped()  // Stop station on the Station page, or a clean exit
+                } else if proc.terminationStatus == 75 {
+                    self.restartStation(nil)  // the dashboard asked for a restart, e.g. after adding an add-on
                 } else {
                     self.fail("The station stopped unexpectedly (code \(proc.terminationStatus)). Details are in the log.",
                               showLog: true, restart: true)
@@ -282,6 +301,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             case .alertSecondButtonReturn: NSApp.terminate(nil)
             default: break
             }
+        }
+    }
+
+    /// Unpacks a downloaded app, checks it, puts it in place of this one and starts it.
+    func installUpdate(_ zip: URL) {
+        let current = URL(fileURLWithPath: Bundle.main.bundlePath)
+        let work = FileManager.default.temporaryDirectory.appendingPathComponent("notoryx-update-\(UUID().uuidString)")
+        func failUpdate(_ why: String) {
+            try? FileManager.default.removeItem(at: work)
+            self.fail("The update couldn't be installed: \(why). The current version keeps running.")
+        }
+        setStatus("Installing the update…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+            guard run("/usr/bin/ditto", ["-x", "-k", zip.path, work.path]).status == 0 else { return failUpdate("unpacking failed") }
+            let fresh = work.appendingPathComponent("NOTORYX Ops.app")
+            let plist = NSDictionary(contentsOf: fresh.appendingPathComponent("Contents/Info.plist"))
+            guard plist?["CFBundleIdentifier"] as? String == Bundle.main.bundleIdentifier else { return failUpdate("it isn't NOTORYX Ops") }
+            guard run("/usr/bin/codesign", ["-v", fresh.path]).status == 0 else { return failUpdate("its signature didn't check out") }
+            _ = run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", fresh.path])
+            // Stop the station before swapping, so nothing runs from the old copy.
+            self.quitting = true
+            if let p = self.station, p.isRunning { p.interrupt(); p.waitUntilExit() }
+            let old = work.appendingPathComponent("previous.app")
+            do {
+                try FileManager.default.moveItem(at: current, to: old)
+                try FileManager.default.moveItem(at: fresh, to: current)
+            } catch {
+                if !FileManager.default.fileExists(atPath: current.path) { try? FileManager.default.moveItem(at: old, to: current) }
+                self.quitting = false
+                return failUpdate(error.localizedDescription)
+            }
+            try? FileManager.default.removeItem(at: zip)
+            let relaunch = Process()
+            relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
+            relaunch.arguments = ["-c", "sleep 1; /usr/bin/open -n \"$0\"", current.path]
+            try? relaunch.run()
+            DispatchQueue.main.async { NSApp.terminate(nil) }
         }
     }
 

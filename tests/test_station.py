@@ -217,6 +217,13 @@ def test_radio_lost_alert_raises_and_clears(tmp_path):
 
     from notoryx_ops import config
     from notoryx_ops.alerts import Alerts
+def test_watch_only_repeater_is_never_polled(tmp_path):
+    import json
+    import time
+
+    from notoryx_ops import config
+    from notoryx_ops.alerts import Alerts
+    from notoryx_ops.fleet import Fleet
     from notoryx_ops.ingest import Hub
     from notoryx_ops.store import Store
 
@@ -248,3 +255,17 @@ def test_radio_health_endpoint_in_demo(tmp_path):
     with TestClient(create_app(cfg)) as c:
         h = c.get("/api/station/radio").json()
         assert h["connected"] and h["battery_mv"] and h["firmware"]
+    store = Store(tmp_path / "ops.sqlite")
+    hub = Hub()
+    fleet = Fleet(cfg, store, None, Alerts(cfg, store, hub), hub)
+    key = "ab" + "0" * 62
+    rid = fleet.add(key, "Not mine", password="secret", watch_only=True)
+    rep = store.one("SELECT * FROM repeaters WHERE id = ?", (rid,))
+    assert rep["watch_only"] == 1 and rep["password"] == ""  # a watched repeater never keeps a password
+    now = time.time()
+    for i, path in enumerate([["11", "ab", "22"], ["ab", "33"], ["44", "55"]]):
+        store.x("INSERT INTO packets(hash, received_at, observer, source, route, ptype, hops, hash_size, path, raw)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)", (f"h{i}", now - 60, "o", "radio", "flood", "TXT", len(path), 1, json.dumps(path), ""))
+    (ov,) = fleet.overview()
+    assert ov["relay"]["packets_24h"] == 2
+    assert {n["prefix"] for n in ov["relay"]["neighbours"]} == {"11", "22", "33"}
