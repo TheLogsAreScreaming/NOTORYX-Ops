@@ -5,11 +5,42 @@ import { getUnits, useUnits } from "../units";
 import { currentTheme, nodeColor, onTheme, routeColor, snrColor } from "../themes";
 import { Node, Packet, TYPE_LABEL, TYPE_PILL, ago, api, clock, duration, ignoreNode, knownTime, makeResolver, useApi, useLive } from "../api";
 import { CARDINAL_AT, Rect, distanceM, freeRect, inRect, inset, pullInside, ringFeatures, ringStep } from "../rings";
+import { useMeshtasticAddon } from "../components/Meshtastic";
 
 const ROUTE_MS = 2600;
 const SPEEDS = [1, 10, 60, 300];
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 const RINGS_KEY = "notoryx-ops-range-rings";
+const MESH_KEY = "notoryx-ops-map-mesh";
+type MapMesh = "meshcore" | "meshtastic" | "both";
+const MESHCORE_LAYERS = ["links", "routes", "pings", "owned", "nodes", "labels"];
+const MT_LAYERS = ["mtnodes", "mtlabels"];
+
+function loadMesh(): MapMesh {
+  try {
+    const v = localStorage.getItem(MESH_KEY);
+    return v === "meshtastic" || v === "both" ? v : "meshcore";
+  } catch {
+    return "meshcore";
+  }
+}
+
+/** A white diamond drawn once and tinted by the map (SDF), so Meshtastic nodes never look like MeshCore dots. */
+function diamondImage(size = 40): ImageData {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d")!;
+  const h = size / 2;
+  g.fillStyle = "#fff";
+  g.beginPath();
+  g.moveTo(h, 3);
+  g.lineTo(size - 3, h);
+  g.lineTo(h, size - 3);
+  g.lineTo(3, h);
+  g.closePath();
+  g.fill();
+  return g.getImageData(0, 0, size, size);
+}
 
 function loadRings(): boolean {
   try {
@@ -69,6 +100,18 @@ export default function LiveMap() {
   const [rings, setRings] = useState(loadRings);
   const { data: fleet } = useApi<any[]>("/api/fleet", 60000);
   const { data: links } = useApi<any[]>("/api/links", 120000);
+  const hasMt = useMeshtasticAddon();
+  const [mesh, setMeshState] = useState<MapMesh>(loadMesh);
+  const setMesh = (m: MapMesh) => {
+    setMeshState(m);
+    try {
+      localStorage.setItem(MESH_KEY, m);
+    } catch {
+      // the choice just isn't remembered
+    }
+  };
+  const shown: MapMesh = hasMt ? mesh : "meshcore";
+  const { data: mtNodes } = useApi<any[]>(hasMt ? "/api/addons/meshtastic/nodes" : null, 60000);
   const [feed, setFeed] = useState<Packet[]>([]);
   const [mode, setMode] = useState<"live" | "replay">("live");
   const [replay, setReplay] = useState<ReplayRow[] | null>(null);
@@ -215,11 +258,69 @@ export default function LiveMap() {
     m.setPaintProperty("nodes", "circle-stroke-color", t.map.land);
     m.setPaintProperty("labels", "text-color", t.map.label);
     m.setPaintProperty("labels", "text-halo-color", t.map.halo);
-    if (!fitted.current && located.length) {
+    drawMeshtastic(m);
+    const mtPlaced = mtLocated();
+    const fitPoints: [number, number][] =
+      shown === "meshtastic" ? mtPlaced.map((n) => [n.lon, n.lat]) : shown === "both" ? [...located.map((n) => [n.lon!, n.lat!] as [number, number]), ...mtPlaced.map((n) => [n.lon, n.lat] as [number, number])] : located.map((n) => [n.lon!, n.lat!]);
+    if (!fitted.current && fitPoints.length) {
       fitted.current = true;
-      fitTo(m, located.map((n) => [n.lon!, n.lat!]), { top: 40, bottom: 80, left: 200, right: 380 });
+      fitTo(m, fitPoints, { top: 40, bottom: 80, left: 200, right: 380 });
     }
     drawRings(m);
+  }
+
+  function mtLocated(): any[] {
+    return (mtNodes || []).filter((n) => typeof n.lat === "number" && typeof n.lon === "number" && (n.lat !== 0 || n.lon !== 0) && onGlobe([n.lon, n.lat]));
+  }
+
+  /** Meshtastic nodes with a position, as diamonds, from the add-on's radio. */
+  function drawMeshtastic(m: MlMap) {
+    const t = currentTheme();
+    const staleAfter = (info?.stale_after_hours || 24) * 3600;
+    const now = Date.now() / 1000;
+    const fc: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: mtLocated().map((n) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [n.lon, n.lat] },
+        properties: { num: n.num, name: n.long_name || n.short_name || n.id, short: n.short_name || "", id: n.id, hw: n.hw_model || "", role: n.role || "", heard: n.last_heard || 0, snr: n.snr ?? null, hops: n.hops ?? null, router: /ROUTER|REPEATER/.test(n.role || "") ? 1 : 0, stale: !n.last_heard || now - n.last_heard > staleAfter ? 1 : 0 },
+      })),
+    };
+    const src = m.getSource("mtnodes") as GeoJSONSource | undefined;
+    if (src) src.setData(fc);
+    else m.addSource("mtnodes", { type: "geojson", data: fc });
+    if (!m.hasImage("mt-diamond")) m.addImage("mt-diamond", diamondImage(), { sdf: true, pixelRatio: 2 });
+    if (!m.getLayer("mtnodes")) {
+      m.addLayer({ id: "mtnodes", type: "symbol", source: "mtnodes", layout: { "icon-image": "mt-diamond", "icon-size": ["case", ["==", ["get", "router"], 1], 0.85, 0.65], "icon-allow-overlap": true }, paint: { "icon-color": t.ui.ok, "icon-halo-color": t.map.land, "icon-halo-width": 1.5, "icon-opacity": ["case", ["==", ["get", "stale"], 1], 0.35, 1] } });
+      m.addLayer({ id: "mtlabels", type: "symbol", source: "mtnodes", minzoom: 9, layout: { "text-field": ["get", "name"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.3], "text-anchor": "top" }, paint: { "text-color": t.map.label, "text-halo-color": t.map.halo, "text-halo-width": 1.2, "text-opacity": ["case", ["==", ["get", "stale"], 1], 0.55, 1] } });
+      m.on("click", "mtnodes", (e) => {
+        const f = e.features?.[0];
+        if (!f) return;
+        const p = f.properties as any;
+        const heard = p.heard ? ago(p.heard) : "—";
+        new maplibregl.Popup({ closeButton: true })
+          .setLngLat((f.geometry as GeoJSON.Point).coordinates as [number, number])
+          .setHTML(
+            `<strong>${escapeHtml(p.name)}</strong> <span class="pill ok">Meshtastic</span><br/>${escapeHtml(p.id)}${p.short ? ` · ${escapeHtml(p.short)}` : ""}<br/>${escapeHtml(p.hw)} · ${escapeHtml(p.role)}<br/>Last heard ${heard}` +
+              `${p.snr != null && p.snr !== "null" ? ` · SNR ${p.snr}` : ""}${p.hops != null && p.hops !== "null" ? ` · ${p.hops} hops` : ""}` +
+              `<div class="popup-actions"><a href="/addons/meshtastic/"><button type="button" class="small-btn">Manage</button></a></div>`,
+          )
+          .addTo(m);
+      });
+      m.on("mouseenter", "mtnodes", () => (m.getCanvas().style.cursor = "pointer"));
+      m.on("mouseleave", "mtnodes", () => (m.getCanvas().style.cursor = ""));
+    }
+    m.setPaintProperty("mtnodes", "icon-color", t.ui.ok);
+    m.setPaintProperty("mtnodes", "icon-halo-color", t.map.land);
+    m.setPaintProperty("mtlabels", "text-color", t.map.label);
+    m.setPaintProperty("mtlabels", "text-halo-color", t.map.halo);
+    showMeshes(m);
+  }
+
+  function showMeshes(m: MlMap) {
+    const vis = (on: boolean) => (on ? "visible" : "none");
+    for (const id of MESHCORE_LAYERS) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", vis(shown !== "meshtastic"));
+    for (const id of MT_LAYERS) if (m.getLayer(id)) m.setLayoutProperty(id, "visibility", vis(shown !== "meshcore"));
   }
   const byKeyRef = useRef(byKey);
   byKeyRef.current = byKey;
@@ -290,7 +391,7 @@ export default function LiveMap() {
   useEffect(() => {
     if (ready && map.current) drawStatic(map.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, links, fleet, ready]);
+  }, [nodes, links, fleet, ready, mtNodes, shown]);
 
   // Animation loop for routes and pings.
   useEffect(() => {
@@ -388,6 +489,14 @@ export default function LiveMap() {
         }}
       />
       <div className="overlay legend" aria-label="Map key">
+        {hasMt && (
+          <div className="seg" role="radiogroup" aria-label="Which mesh to show" style={{ marginBottom: 6 }}>
+            {([["meshcore", "MeshCore"], ["meshtastic", "Meshtastic"], ["both", "Both"]] as [MapMesh, string][]).map(([v, l]) => (
+              <button key={v} type="button" role="radio" aria-checked={shown === v} className={shown === v ? "on" : ""} onClick={() => { fitted.current = false; setMesh(v); }}>{l}</button>
+            ))}
+          </div>
+        )}
+        {shown !== "meshtastic" && <>
         <span><span className="dot" style={{ background: nodeColor("repeater") }} />Repeater</span>
         <span><span className="dot" style={{ background: nodeColor("room") }} />Room server</span>
         <span><span className="dot" style={{ background: nodeColor("companion") }} />Companion</span>
@@ -395,6 +504,13 @@ export default function LiveMap() {
         <span><span className="dot" style={{ border: "2px solid var(--bad)", width: 12, height: 12 }} />Yours, quiet</span>
         <span><span className="dot" style={{ background: "var(--text-3)", opacity: 0.35 }} />Faded: stale{info?.stale_after_hours ? ` (not heard in ${duration(info.stale_after_hours * 3600)})` : ""}</span>
         <span className="faint">Dashed lines: links (colour = SNR)</span>
+        </>}
+        {shown !== "meshcore" && (
+          <span>
+            <span aria-hidden="true" style={{ display: "inline-block", width: 10, height: 10, marginRight: 6, transform: "rotate(45deg)", background: "var(--ok)" }} />
+            Meshtastic node{mtNodes ? ` (${mtLocated().length} of ${mtNodes.length} have a position; faded = not heard lately)` : ""}
+          </span>
+        )}
         <button type="button" className="small-btn" aria-pressed={rings} onClick={() => setRings((r) => !r)} style={{ marginTop: 4, alignSelf: "flex-start" }}>
           {rings ? "Hide range rings" : "Show range rings"}
         </button>
@@ -403,6 +519,7 @@ export default function LiveMap() {
       <div className="overlay feed" aria-live="polite">
         <div className="row" style={{ marginBottom: 6 }}>
           <strong>{mode === "live" ? "Live packets" : "Replayed packets"}</strong>
+          {shown !== "meshcore" && <span className="small faint" style={{ marginLeft: 6 }}>MeshCore</span>}
           <span className="sp" style={{ flex: 1 }} />
           {mode === "live" && (
             <button onClick={() => setPaused((p) => !p)} aria-pressed={paused}>
