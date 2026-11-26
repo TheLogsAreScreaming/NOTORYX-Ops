@@ -1,20 +1,23 @@
 """Checks for newer NOTORYX Ops versions and add-ons, and fetches them with checksums.
 
-Everything comes from the public NOTORYX-Ops-Releases repository on GitHub. Each release
-there carries a SHA256SUMS file, and every download is checked against it before use.
+Everything comes from the public NOTORYX-Ops-Releases repository on GitHub. Releases are
+listed from its public releases feed (releases.atom) rather than the GitHub API, which only
+allows 60 unauthenticated calls an hour per network. Each release carries a SHA256SUMS
+file: it names the release's files, and every download is checked against it before use.
 Nothing is installed without someone pressing a button in the dashboard.
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
+import html
 import logging
 import re
 import subprocess
 import sys
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -27,7 +30,8 @@ log = logging.getLogger(__name__)
 
 RELEASES_REPO = "TheLogsAreScreaming/NOTORYX-Ops-Releases"
 RELEASES_URL = f"https://github.com/{RELEASES_REPO}/releases"
-API = f"https://api.github.com/repos/{RELEASES_REPO}/releases?per_page=15"
+FEED = f"{RELEASES_URL}.atom"
+DOWNLOAD = f"{RELEASES_URL}/download"
 CACHE_SECONDS = 3600
 
 # Add-ons the dashboard can install: wheel name prefix -> package name and what it is.
@@ -61,30 +65,68 @@ def installed_version(package: str) -> str | None:
         return None
 
 
-def _get_json(url: str) -> Any:
-    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "notoryx-ops"})
-    with urlopen(req, timeout=15) as r:
-        return json.loads(r.read().decode())
+def _get(url: str, timeout: float = 15) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": "notoryx-ops"})
+    with urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def _notes_text(html_text: str) -> str:
+    """Release notes from the feed's HTML, back as simple markdown-ish text (headings and bullets kept)."""
+    t = html.unescape(html_text or "")
+    t = re.sub(r"(?i)<h[1-6][^>]*>", "\n## ", t)
+    t = re.sub(r"(?i)<li[^>]*>", "\n- ", t)
+    t = re.sub(r"(?i)<(br|/p|/h[1-6]|/li|/ul|/tr)[^>]*>", "\n", t)
+    t = re.sub(r"<[^>]+>", "", t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
+
+
+def _sums_for(tag: str) -> dict[str, str]:
+    """A release's SHA256SUMS: file name -> checksum. Also the list of its files."""
+    text = _get(f"{DOWNLOAD}/{tag}/SHA256SUMS", timeout=30).decode()
+    out = {}
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            out[parts[1].lstrip("*")] = parts[0].lower()
+    return out
 
 
 def releases(force: bool = False) -> list[dict[str, Any]]:
-    """App releases (tags starting with v), newest first. Cached for an hour."""
-    if not force and _cache["releases"] is not None and time.time() - _cache["at"] < CACHE_SECONDS:
+    """App releases (tags starting with v), newest first, from the releases feed. Cached for an hour;
+    a failed check keeps showing the last good answer."""
+    fresh = time.time() - _cache["at"] < CACHE_SECONDS
+    if _cache["releases"] is not None and (fresh and not force):
         return _cache["releases"]
     try:
-        raw = _get_json(API)
+        root = ET.fromstring(_get(FEED))
     except Exception as exc:  # noqa: BLE001
+        if _cache["releases"] is not None:
+            return _cache["releases"]
         raise UpdateError(f"Couldn't reach GitHub to check for updates: {exc}") from exc
+    ns = {"a": "http://www.w3.org/2005/Atom"}
     out = []
-    for rel in raw:
-        v = parse_version(rel.get("tag_name", ""))
-        if not v or rel.get("draft"):
+    for e in root.findall("a:entry", ns):
+        link = e.find("a:link", ns)
+        url = link.get("href", "") if link is not None else ""
+        tag = url.rsplit("/tag/", 1)[-1] if "/tag/" in url else ""
+        v = parse_version(tag)
+        if not v:
             continue
-        out.append({"tag": rel["tag_name"], "version": ".".join(map(str, v)), "key": v,
-                    "name": rel.get("name") or rel["tag_name"], "url": rel.get("html_url") or RELEASES_URL,
-                    "notes": rel.get("body") or "", "published": rel.get("published_at"),
-                    "assets": {a["name"]: a["browser_download_url"] for a in rel.get("assets", [])}})
+        out.append({"tag": tag, "version": ".".join(map(str, v)), "key": v,
+                    "name": (e.findtext("a:title", "", ns) or tag), "url": url or RELEASES_URL,
+                    "notes": _notes_text(e.findtext("a:content", "", ns)), "published": e.findtext("a:updated", "", ns),
+                    "assets": None})
     out.sort(key=lambda r: r["key"], reverse=True)
+    if out:
+        try:
+            sums = _sums_for(out[0]["tag"])
+            out[0]["assets"] = {name: f"{DOWNLOAD}/{out[0]['tag']}/{name}" for name in [*sums, "SHA256SUMS"]}
+            out[0]["sums"] = sums
+        except Exception as exc:  # noqa: BLE001
+            if _cache["releases"] is not None:
+                return _cache["releases"]
+            raise UpdateError(f"Couldn't read the newest release's file list: {exc}") from exc
     _cache.update(at=time.time(), releases=out)
     return out
 
@@ -96,7 +138,7 @@ def summary(force: bool = False) -> dict[str, Any]:
     current = parse_version(__version__) or (0, 0, 0)
     addons = []
     if latest:
-        for asset in latest["assets"]:
+        for asset in latest["assets"] or {}:
             for prefix, meta in KNOWN_ADDONS.items():
                 if asset.startswith(prefix + "-") and asset.endswith(".whl"):
                     avail = asset[len(prefix) + 1:].split("-")[0]
@@ -108,25 +150,10 @@ def summary(force: bool = False) -> dict[str, Any]:
         "current": __version__,
         "latest": latest and {k: latest[k] for k in ("tag", "version", "name", "url", "notes", "published")},
         "newer": bool(latest) and latest["key"] > current,
-        "mac_asset": latest and next((a for a in latest["assets"] if a.endswith("-mac.zip")), None),
+        "mac_asset": latest and next((a for a in latest["assets"] or {} if a.endswith("-mac.zip")), None),
         "addons": addons,
         "releases_url": RELEASES_URL,
     }
-
-
-def _sums(rel: dict[str, Any]) -> dict[str, str]:
-    url = rel["assets"].get("SHA256SUMS")
-    if not url:
-        raise UpdateError("That release has no SHA256SUMS file, so its downloads can't be checked.")
-    req = urllib.request.Request(url, headers={"User-Agent": "notoryx-ops"})
-    with urlopen(req, timeout=30) as r:
-        text = r.read().decode()
-    out = {}
-    for line in text.splitlines():
-        parts = line.split()
-        if len(parts) == 2:
-            out[parts[1].lstrip("*")] = parts[0].lower()
-    return out
 
 
 def download(asset: str, folder: Path, progress: Callable[[int, int | None], None] | None = None) -> Path:
@@ -135,9 +162,9 @@ def download(asset: str, folder: Path, progress: Callable[[int, int | None], Non
     if not rels:
         raise UpdateError("No releases found.")
     rel = rels[0]
-    if asset not in rel["assets"] or "/" in asset or asset.startswith("."):
+    if asset not in (rel["assets"] or {}) or "/" in asset or asset.startswith("."):
         raise UpdateError(f"The newest release has no file called {asset}.")
-    want = _sums(rel).get(asset)
+    want = (rel.get("sums") or {}).get(asset)
     if not want:
         raise UpdateError(f"{asset} isn't listed in SHA256SUMS, so it can't be checked.")
     folder.mkdir(parents=True, exist_ok=True)
