@@ -312,7 +312,16 @@ async function loadTemplates() {
     <tr><td>${esc(x.name)}</td><td>${esc(x.section)}</td>
       <td class="mono small">${esc(Object.entries(x.fields).map(([k, v]) => `${k}=${v}`).join(", "))}</td>
       <td class="row"><button data-check="${x.id}">Check picked nodes</button><button data-apply="${x.id}">Apply to picked nodes</button><button class="danger" data-del="${x.id}">Delete</button></td></tr>`).join("")
-    || '<tr><td colspan="4" class="faint">No templates yet. Read a node\'s settings, change some fields and save them as a template.</td></tr>';
+    || `<tr><td colspan="4">
+      <div><strong>No templates yet.</strong> To make one:</div>
+      <ol class="small" style="margin:6px 0 0 18px; padding:0">
+        <li>Press <b>Manage</b> on a node of yours that's already set up the way you want.</li>
+        <li>Pick a section (for example <b>lora</b>) and read it.</li>
+        <li>Change any fields if you like, then <b>Save as template</b>.</li>
+        <li>Tick nodes in the Nodes table above, then <b>Check</b> them against it, and <b>Apply</b> to fix the ones that differ.</li>
+      </ol>
+      <div class="small faint" style="margin-top:6px">Each node must list this station's public key (Copy, at the top) under Security &rarr; Admin keys, or it refuses.</div>
+    </td></tr>`;
 }
 
 async function watch(job) {
