@@ -22,7 +22,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS mt_templates (
