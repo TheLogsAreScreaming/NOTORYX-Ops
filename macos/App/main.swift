@@ -578,7 +578,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             return i
         }
         sub("Help", [
-            link("\(appName) User Guide", "https://github.com/TheLogsAreScreaming/NOTORYX-Ops/blob/main/docs/USER_GUIDE.md"),
+            // The public copy on the releases repo; copy docs/USER_GUIDE.md there when it changes.
+            link("\(appName) User Guide", "https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/blob/main/USER_GUIDE.md"),
             link("Release Notes", "https://github.com/TheLogsAreScreaming/NOTORYX-Ops-Releases/releases"),
             .separator(),
             item("Show Station Log", #selector(showLog(_:)), target: self),
