@@ -81,7 +81,38 @@ export default function Station() {
           <Link to="/settings"><button>Open Settings</button></Link>
         </div>
       </div>
+      <LeavesStation />
     </>
+  );
+}
+
+/** Everything that can leave the station, from the same list the build's privacy check uses. */
+function LeavesStation() {
+  const { data } = useApi<{ flows: any[] }>("/api/privacy", 60000);
+  if (!data) return null;
+  const onRadio = data.flows.filter((f) => f.on && f.radio_data).length;
+  return (
+    <div className="card">
+      <h2>What leaves this station</h2>
+      <div className="small muted" style={{ marginBottom: 8 }}>
+        {onRadio === 0
+          ? "Nothing your radios hear leaves this station right now."
+          : `${onRadio} of these send something your radios heard. Each one is off until you turn it on.`}
+        {" "}Every build checks that no other code can reach the network.
+      </div>
+      <table className="small">
+        <tbody>
+          {data.flows.map((f) => (
+            <tr key={f.id}>
+              <th style={{ whiteSpace: "nowrap" }}>
+                <span className={`pill ${f.on ? (f.radio_data ? "warn" : "plain") : "ok"}`}>{f.on ? "On" : "Off"}</span> {f.name}
+              </th>
+              <td>{f.sends}<div className="faint">{f.radio_data ? "Includes radio data · " : ""}{f.setting}</div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

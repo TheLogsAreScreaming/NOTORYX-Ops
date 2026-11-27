@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, settings, updates
+from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -267,6 +267,11 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/station")
     def station_info():
         return st.info()
+
+    @app.get("/api/privacy")
+    def privacy_flows():
+        """Everything that can leave this station, whether it's on, and where to turn it off."""
+        return {"flows": privacy.view(cfg)}
 
     @app.get("/api/station/radio")
     async def station_radio():
