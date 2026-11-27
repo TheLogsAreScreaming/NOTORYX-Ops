@@ -272,6 +272,86 @@ class RadioLink:
             raise RadioError(f"No reply to '{cmd}'.")
         return (ev.payload or {}).get("text", "").strip()
 
+    # ---- reach: trace, path discovery, who can hear me ---------------------
+    async def trace(self, path: list[str], timeout: float = 20) -> dict[str, Any]:
+        """Send a trace along these repeater hashes (all the same length) and wait for it to come back.
+
+        Every repeater on the way adds the SNR it heard the trace at. Returns
+        {"hops": [{"hash", "snr"}...], "final_snr"}.
+        """
+        import random
+
+        from meshcore import EventType
+
+        mc = self._require()
+        if not path:
+            raise RadioError("Pick at least one repeater to trace through.")
+        size = len(path[0])
+        if size not in (2, 4, 8) or any(len(h) != size for h in path):
+            raise RadioError("Every hop needs a hash of the same length (1, 2 or 4 bytes).")
+        tag = random.randint(1, 0xFFFFFFFF)
+        flags = {2: 0, 4: 1, 8: 2}[size]
+        waiter = asyncio.create_task(mc.dispatcher.wait_for_event(EventType.TRACE_DATA, {"tag": tag}, timeout=timeout))
+        await asyncio.sleep(0)
+        sent = await mc.commands.send_trace(auth_code=0, tag=tag, flags=flags, path=bytes.fromhex("".join(path)))
+        if sent is None or sent.type == EventType.ERROR:
+            waiter.cancel()
+            raise RadioError("The radio refused the trace.")
+        ev = await waiter
+        if ev is None:
+            raise RadioError("The trace didn't come back. A repeater on the way may be out of range.")
+        nodes = list((ev.payload or {}).get("path") or [])
+        hops = [{"hash": n.get("hash"), "snr": n.get("snr")} for n in nodes if n.get("hash")]
+        final = next((n.get("snr") for n in reversed(nodes) if "hash" not in n), None)
+        return {"hops": hops, "final_snr": final}
+
+    async def path_discovery(self, public_key: str, timeout: float = 30) -> dict[str, Any]:
+        """Ask the mesh for a fresh route to a node and back. Returns both paths as hash lists."""
+        mc = self._require()
+        c = await self.contact(public_key)
+        ev = await mc.commands.send_path_discovery_sync(c, min_timeout=min(timeout, 12), timeout=0)
+        if ev is None:
+            raise RadioError("No route came back. The node may be asleep or out of reach.")
+        p = ev.payload or {}
+
+        def split(hexpath: str, size: int) -> list[str]:
+            n = max(1, int(size or 1)) * 2
+            return [hexpath[i:i + n] for i in range(0, len(hexpath or ""), n)]
+
+        return {"out_path": split(p.get("out_path", ""), p.get("out_path_hash_len", 1)),
+                "in_path": split(p.get("in_path", ""), p.get("in_path_hash_len", 1))}
+
+    async def who_hears_me(self, wait: float = 10) -> list[dict[str, Any]]:
+        """Ask nearby repeaters to answer (zero hop) and collect who did, with signal both ways."""
+        from meshcore import EventType
+
+        mc = self._require()
+        found: dict[str, dict[str, Any]] = {}
+        tag_hex: list[str] = []
+
+        async def on_resp(event):
+            p = event.payload or {}
+            if tag_hex and p.get("tag") != tag_hex[0]:
+                return
+            key = p.get("pubkey") or ""
+            if key:
+                found[key] = {"key": key, "node_type": p.get("node_type"), "snr_them": p.get("SNR_in"),
+                              "snr_us": p.get("SNR"), "rssi_us": p.get("RSSI")}
+
+        sub = mc.subscribe(EventType.DISCOVER_RESPONSE, on_resp)
+        try:
+            ev = await mc.commands.send_node_discover_req(1 << 2, prefix_only=False)
+            if ev is None or ev.type == EventType.ERROR:
+                raise RadioError("The radio refused the request. It may need newer MeshCore firmware (1.10 or later).")
+            tag_hex.append(int(ev.payload["tag"]).to_bytes(4, "little").hex())
+            await asyncio.sleep(wait)
+        finally:
+            try:
+                mc.unsubscribe(sub)
+            except Exception:  # noqa: BLE001
+                pass
+        return sorted(found.values(), key=lambda r: -(r.get("snr_them") or -99))
+
     # ---- channels -----------------------------------------------------------
     async def channel_slots(self) -> list[dict[str, Any]]:
         """The radio's channel slots: index, name and key (hex). Empty slots have an empty name."""
