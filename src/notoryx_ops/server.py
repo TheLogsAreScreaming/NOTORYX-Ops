@@ -123,6 +123,15 @@ class ImportIn(BaseModel):
     text: str = Field(max_length=5_000_000)
 
 
+class TraceIn(BaseModel):
+    path: list[str] = Field(min_length=1, max_length=16)
+    round_trip: bool = True
+
+
+class RouteIn(BaseModel):
+    public_key: str = Field(pattern="^[0-9a-fA-F]{12,64}$")
+
+
 class DecodeIn(BaseModel):
     raw: str = Field(max_length=1200)
 
@@ -449,6 +458,59 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
         sent_times.append(now)
         st.store.audit("channel_send", {"channel": ch.name, "length": len(text), "by": who(request)})
         return {"sent": True, "channel": ch.name, "at": now}
+
+    # ---- reach: trace, find a route, who can hear me ------------------------
+    reach_times: list[float] = []
+
+    def reach_slot(what: str, request: Request) -> None:
+        """One airtime budget for the reach tools: 10 s apart, 15 per 10 minutes."""
+        now = time.time()
+        reach_times[:] = [t for t in reach_times if now - t < 600]
+        if reach_times and now - reach_times[-1] < 10:
+            raise HTTPException(429, "Wait 10 seconds between these to save airtime.")
+        if len(reach_times) >= 15:
+            raise HTTPException(429, "That's 15 in 10 minutes. Wait a bit to save airtime.")
+        reach_times.append(now)
+        st.store.audit(f"reach_{what}", {"by": who(request)})
+
+    def resolve(hashes: list[str]) -> list[dict[str, Any]]:
+        """Match path hashes to known nodes. Two or more matches means the hash is shared."""
+        out = []
+        for h in hashes:
+            rows = st.store.q("SELECT public_key, name, node_type, lat, lon FROM nodes WHERE public_key LIKE ?"
+                              " ORDER BY last_seen DESC LIMIT 4", (h.lower() + "%",))
+            out.append({"hash": h, "matches": rows})
+        return out
+
+    @app.post("/api/reach/trace", dependencies=[Depends(operator)])
+    async def reach_trace(body: TraceIn, request: Request):
+        """Trace through these repeaters and back, with the SNR each one heard it at."""
+        path = [h.strip().lower() for h in body.path]
+        if any(not re.fullmatch(r"[0-9a-f]{2}|[0-9a-f]{4}|[0-9a-f]{8}", h) for h in path):
+            raise HTTPException(400, "Each hop is a 1, 2 or 4 byte hash in hex, like a3 or a3f1.")
+        full = path + list(reversed(path[:-1])) if body.round_trip else path
+        reach_slot("trace", request)
+        res = await st.radio.trace(full)
+        for hop, info in zip(res["hops"], resolve([h["hash"] for h in res["hops"]]), strict=True):
+            hop["matches"] = info["matches"]
+        return {**res, "sent_path": full, "at": time.time()}
+
+    @app.post("/api/reach/route", dependencies=[Depends(operator)])
+    async def reach_route(body: RouteIn, request: Request):
+        """Ask the mesh for a fresh route to a node and back."""
+        reach_slot("route", request)
+        res = await st.radio.path_discovery(body.public_key.lower())
+        return {"out": resolve(res["out_path"]), "back": resolve(res["in_path"]), "at": time.time()}
+
+    @app.post("/api/reach/who-hears-me", dependencies=[Depends(operator)])
+    async def reach_who(request: Request):
+        """Repeaters that can hear the station radio directly, with signal both ways."""
+        reach_slot("who", request)
+        heard = await st.radio.who_hears_me()
+        for r in heard:
+            m = resolve([r["key"][:12]])[0]["matches"]
+            r["node"] = m[0] if m else None
+        return {"heard": heard, "at": time.time()}
 
     @app.get("/api/channels")
     def channels():

@@ -179,6 +179,29 @@ class DemoRadio:
         return [{"pubkey": n["key"][:4].hex(), "secs_ago": random.randint(30, 3000),
                  "snr": random.randint(-40, 40) / 4} for n in random.sample(others, 3)]
 
+    # ---- reach: made-up answers shaped like the real radio's -------------------
+    async def trace(self, path: list[str], timeout: float = 20) -> dict[str, Any]:
+        from .radio import RadioError
+
+        await asyncio.sleep(0.4)
+        known = {n["key"][: len(path[0]) // 2].hex() for n in self.net.repeaters} if path else set()
+        if not path or any(h not in known for h in path):
+            raise RadioError("The trace didn't come back. A repeater on the way may be out of range.")
+        return {"hops": [{"hash": h, "snr": round(random.uniform(-6, 11), 2)} for h in path],
+                "final_snr": round(random.uniform(-4, 10), 2)}
+
+    async def path_discovery(self, public_key: str, timeout: float = 30) -> dict[str, Any]:
+        await asyncio.sleep(0.5)
+        hops = [n["key"][:1].hex() for n in random.sample(self.net.repeaters[1:], 2)]
+        return {"out_path": hops, "in_path": list(reversed(hops))}
+
+    async def who_hears_me(self, wait: float = 10) -> list[dict[str, Any]]:
+        await asyncio.sleep(min(wait, 1))
+        heard = self.net.repeaters[1:5]
+        return sorted(({"key": n["key"].hex(), "node_type": 2, "snr_them": round(random.uniform(-8, 12), 2),
+                        "snr_us": round(random.uniform(-8, 12), 2), "rssi_us": random.randint(-115, -70)}
+                       for n in heard), key=lambda r: -r["snr_them"])
+
     # ---- channels: a pretend radio with 8 slots; sent messages come back as if heard -----
     _slots: list[dict[str, Any]] | None = None
 

@@ -16,11 +16,12 @@ import Login from "./pages/Login";
 import Field from "./pages/Field";
 import Survey from "./pages/Survey";
 import PublicMap from "./pages/PublicMap";
+import Reach from "./pages/Reach";
 import { signOut, useMe } from "./auth";
 
 const NAV: [string, [string, string][]][] = [
   ["Live", [["/", "Live map"], ["/packets", "Packets"], ["/nodes", "Nodes"], ["/channels", "Channels"]]],
-  ["Network", [["/observers", "Observers"], ["/coverage", "Coverage"], ["/analytics", "Analytics"], ["/field", "Field work"]]],
+  ["Network", [["/observers", "Observers"], ["/coverage", "Coverage"], ["/analytics", "Analytics"], ["/reach", "Reach"], ["/field", "Field work"]]],
   ["Fleet", [["/fleet", "My fleet"], ["/alerts", "Alerts"]]],
   ["System", [["/station", "Station"], ["/settings", "Settings"]]],
 ];
@@ -104,6 +105,7 @@ function Dashboard() {
           <Route path="/observers" element={<Observers />} />
           <Route path="/coverage" element={<Coverage />} />
           <Route path="/field" element={<Field />} />
+          <Route path="/reach" element={<Reach />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/station" element={<Station />} />
