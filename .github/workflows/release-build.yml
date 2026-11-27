@@ -39,7 +39,7 @@ jobs:
           WHL=$(ls dist/*.whl)
           cp "$WHL" out/
           cp dist/*.tar.gz out/notoryx-ops-$V-source.tar.gz
-          mkdir -p pi/notoryx-ops-$V-pi && cp "$WHL" packaging/pi/install.sh pi/notoryx-ops-$V-pi/
+          mkdir -p pi/notoryx-ops-$V-pi && cp "$WHL" packaging/pi/install.sh packaging/pi/kiosk.sh pi/notoryx-ops-$V-pi/
           tar -C pi -czf out/notoryx-ops-$V-pi.tar.gz notoryx-ops-$V-pi
           mkdir -p dk/notoryx-ops-$V-docker && cp "$WHL" packaging/docker/Dockerfile packaging/docker/docker-compose.yml dk/notoryx-ops-$V-docker/
           (cd dk && zip -qr ../out/notoryx-ops-$V-docker.zip notoryx-ops-$V-docker)

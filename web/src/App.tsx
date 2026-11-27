@@ -17,13 +17,14 @@ import Field from "./pages/Field";
 import Survey from "./pages/Survey";
 import PublicMap from "./pages/PublicMap";
 import Reach from "./pages/Reach";
+import Kiosk, { batteryPercent } from "./pages/Kiosk";
 import { signOut, useMe } from "./auth";
 
 const NAV: [string, [string, string][]][] = [
   ["Live", [["/", "Live map"], ["/packets", "Packets"], ["/nodes", "Nodes"], ["/channels", "Channels"]]],
   ["Network", [["/observers", "Observers"], ["/coverage", "Coverage"], ["/analytics", "Analytics"], ["/reach", "Reach"], ["/field", "Field work"]]],
   ["Fleet", [["/fleet", "My fleet"], ["/alerts", "Alerts"]]],
-  ["System", [["/station", "Station"], ["/settings", "Settings"]]],
+  ["System", [["/station", "Station"], ["/kiosk", "Kiosk screen"], ["/settings", "Settings"]]],
 ];
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
   if (loc.pathname === "/survey") return me?.accounts_on && !me.user ? <Login publicMap={false} /> : <Survey />;
   if (!me) return <div className="empty" style={{ padding: 24 }}>Loading…</div>;
   if (me.accounts_on && !me.user) return <Login publicMap={me.public_map} />;
+  if (loc.pathname === "/kiosk") return <Kiosk />;
   return <Dashboard />;
 }
 
@@ -43,6 +45,8 @@ function Dashboard() {
   const { data: open } = useApi<any[]>("/api/alerts?open=true", 30000);
   const { data: info } = useApi<any>("/api/station", 15000);
   const { data: addons } = useApi<any[]>("/api/addons");
+  const { data: health } = useApi<any>("/api/station/radio", 120000);
+  const battery = batteryPercent(health?.battery_mv);
   const { data: upd } = useApi<any>(me?.is_admin ? "/api/updates" : null, 6 * 3600 * 1000);
   const update = upd?.newer ? upd.latest?.version : null;
   const loc = useLocation();
@@ -83,6 +87,12 @@ function Dashboard() {
             {live ? "Live" : "Reconnecting"}
             {info?.demo ? " · demo data" : ""}
           </div>
+          {battery != null && (
+            <div title="Station radio battery, worked out from its voltage. A guide only; reads high while charging."
+              style={{ color: battery < 20 ? "var(--bad)" : undefined }}>
+              Radio battery {battery}%
+            </div>
+          )}
           <div>
             v{info?.version || ""}
             {update && <> · <NavLink to="/settings" className="inline-link">{update} is out</NavLink></>}
