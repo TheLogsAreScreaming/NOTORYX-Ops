@@ -507,6 +507,11 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             hop["matches"] = info["matches"]
         return {**res, "sent_path": full, "at": time.time()}
 
+    @app.get("/api/reach/contacts", dependencies=[Depends(operator)])
+    async def reach_contacts():
+        """The station radio's contacts. Find a route only works for these. Sends nothing on air."""
+        return await st.radio.contacts()
+
     @app.post("/api/reach/route", dependencies=[Depends(operator)])
     async def reach_route(body: RouteIn, request: Request):
         """Ask the mesh for a fresh route to a node and back."""
