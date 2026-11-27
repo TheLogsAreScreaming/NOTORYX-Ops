@@ -4,6 +4,7 @@ import { LookGallery } from "../components/ThemePicker";
 import Accounts from "../components/Accounts";
 import RadioCard from "../components/RadioCard";
 import UpdatesCard from "../components/UpdatesCard";
+import OfflineMaps from "../components/OfflineMaps";
 import { useMe } from "../auth";
 import { Units, fmtDistance, heightIn, heightOut, heightUnit, setUnits, useUnits } from "../units";
 
@@ -189,6 +190,7 @@ export default function Settings() {
       </div>
 
       {me?.is_admin && <UpdatesCard />}
+      {me?.is_admin && <OfflineMaps />}
       <div className="grid2">
         <div className="card">
           <h2>Station</h2>

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl, { Map as MlMap } from "maplibre-gl";
 import { Theme, currentTheme, onTheme } from "../themes";
 
-/** One clean base map, recoloured to the current theme so every look has its own map. */
+/** One clean base map, recoloured to the current theme so every look has its own map.
+ *  The station keeps the tiles (see Settings › Offline maps); the tile server is the fallback. */
+const STATION_STYLE = "/maps/style.json";
 const BASE_STYLE = "https://tiles.openfreemap.org/styles/positron";
 
 type Layer = { id: string; type: string; source?: string; paint?: Record<string, unknown> };
@@ -49,10 +51,11 @@ let baseStyle: Promise<any> | null = null;
 
 /** Fetch the base style once and recolour it before the map draws, so there's no flash. */
 async function themedStyle(t: Theme): Promise<any> {
-  baseStyle ??= fetch(BASE_STYLE).then((r) => {
+  const get = (url: string) => fetch(url).then((r) => {
     if (!r.ok) throw new Error("style");
     return r.json();
   });
+  baseStyle ??= get(STATION_STYLE).catch(() => get(BASE_STYLE));
   const style = structuredClone(await baseStyle);
   for (const layer of style.layers as Layer[]) {
     for (const [prop, value] of tintRules(layer, t)) {
@@ -124,7 +127,7 @@ export default function MapView({
       <div ref={el} className="map" role="region" aria-label="Map" />
       {failed && (
         <div className="overlay" style={{ left: 12, bottom: 12 }}>
-          Map tiles couldn't load. The station needs internet access for the base map.
+          Map tiles couldn't load. Connect the station to the internet once, or add a map pack in Settings.
         </div>
       )}
     </>
