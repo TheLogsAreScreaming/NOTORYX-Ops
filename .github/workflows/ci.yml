@@ -21,7 +21,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
-      - run: ruff check src tests
+      - run: ruff check src tests tools
+      - name: Privacy check (every network path declared, radio data off by default)
+        run: python tools/privacy_check.py
       - run: pytest -q
 
   meshtastic-addon:
