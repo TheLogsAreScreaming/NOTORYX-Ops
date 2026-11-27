@@ -28,7 +28,7 @@ export default function OfflineMaps() {
   const [est, setEst] = useState<{ tiles: number; limit: number; approx_bytes: number } | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const file = useRef<HTMLInputElement>(null);
-  const busy = (data?.packs || []).some((p) => p.state === "downloading" || p.state === "queued");
+  const busy = (data?.packs || []).some((p) => ["downloading", "queued", "finishing"].includes(p.state));
 
   useEffect(() => {
     if (!busy) return;
@@ -155,12 +155,13 @@ export default function OfflineMaps() {
                 <td>{p.name}<div className="faint">zoom {p.min_zoom} to {p.max_zoom} · {clock(p.created, false)}</div></td>
                 <td>{fmt(p.tiles)}</td>
                 <td>
-                  {p.state === "downloading" && p.total ? `${Math.round(((p.done || 0) / p.total) * 100)}%` : p.state}
+                  {p.state === "downloading" && p.total ? `${Math.round(((p.done || 0) / p.total) * 100)}%`
+                    : p.state === "finishing" ? "Getting fonts and icons" : p.state}
                   {p.failed > 0 && <span className="faint"> ({fmt(p.failed)} missed)</span>}
                 </td>
                 <td className="row">
                   <button className="small" onClick={() => exportPack(p)}>Export</button>
-                  <button className="small" onClick={() => remove(p)} disabled={p.state === "downloading"}>Remove</button>
+                  <button className="small" onClick={() => remove(p)} disabled={p.state === "downloading" || p.state === "finishing"}>Remove</button>
                 </td>
               </tr>
             ))}

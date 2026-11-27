@@ -302,6 +302,7 @@ class MapCache:
                 job["done"] += 1
 
         await asyncio.gather(*(worker() for _ in range(workers)))
+        job["state"] = "finishing"  # fonts and map icons, so labels work offline too
         for stack in await asyncio.to_thread(self.fonts):
             for rng in FONT_RANGES:
                 try:
