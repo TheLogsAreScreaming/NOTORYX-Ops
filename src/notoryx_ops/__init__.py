@@ -1,3 +1,3 @@
 """NOTORYX Ops: MeshCore network dashboard and infrastructure station."""
 
-__version__ = "0.1.22"
+__version__ = "0.1.23"
