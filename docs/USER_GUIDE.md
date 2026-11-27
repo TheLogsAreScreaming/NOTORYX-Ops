@@ -11,6 +11,17 @@
 
 Logs: `journalctl -u notoryx-ops -f`
 
+#### Desk or wall screen (kiosk)
+
+With a touchscreen on the Pi, the station can run its own screen with no computer:
+
+1. After `install.sh`, run `./kiosk.sh` as the user who signs in to the desktop (not with sudo).
+2. Restart the Pi. Chromium opens `http://127.0.0.1:8484/kiosk` full screen: the live map with a big status bar (radio, battery, packets a minute, nodes today, alerts, clock).
+3. Turn off **Screen Blanking** in Raspberry Pi Configuration › Display. The kiosk dims itself at night instead; tap to wake it. **Menu** sets dimming to at night, always or never, and goes back to the full dashboard.
+4. Left alone for 2 minutes, the screen goes back to the live map.
+
+`./kiosk.sh --remove` takes it out again. Any browser can open `/kiosk` too.
+
 ### Mac
 
 1. Install Python 3.10 or newer from python.org if you don't have it.
