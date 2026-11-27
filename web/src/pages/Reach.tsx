@@ -64,7 +64,7 @@ export default function Reach() {
     m.addLayer({ id: "reach-dot", type: "circle", source: "reach", filter: ["==", "$type", "Point"],
       paint: { "circle-radius": 6, "circle-color": t.nodes.repeater, "circle-stroke-color": t.ui.bg, "circle-stroke-width": 2 } });
     m.addLayer({ id: "reach-label", type: "symbol", source: "reach", filter: ["==", "$type", "Point"],
-      layout: { "text-field": ["get", "label"], "text-size": 12, "text-offset": [0, 1.2], "text-anchor": "top" },
+      layout: { "text-field": ["get", "label"], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-offset": [0, 1.2], "text-anchor": "top" },
       paint: { "text-color": t.ui.text, "text-halo-color": t.ui.bg, "text-halo-width": 1.5 } });
     draw(drawn);
   }
