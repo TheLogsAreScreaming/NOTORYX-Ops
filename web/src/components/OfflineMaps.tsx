@@ -109,27 +109,30 @@ export default function OfflineMaps() {
           {fmt(data.tiles)} tiles on the station ({mb(data.bytes)}), {fmt(data.pinned)} kept in packs. Tiles outside packs are trimmed above {mb(data.limit_bytes)}.
         </div>
       )}
+      <div className="seg" role="radiogroup" aria-label="Area" style={{ marginBottom: 10 }}>
+        <button type="button" role="radio" aria-checked={!useNodes} className={!useNodes ? "on" : ""} onClick={() => setUseNodes(false)}>Around the station</button>
+        <button type="button" role="radio" aria-checked={useNodes} className={useNodes ? "on" : ""} onClick={() => setUseNodes(true)} disabled={!placed.length}>Every node with a position</button>
+      </div>
       <div className="formgrid">
-        <label htmlFor="mp-name">Name</label>
-        <input id="mp-name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
-        <span>Area</span>
-        <div className="row" role="radiogroup" aria-label="Area">
-          <button role="radio" aria-checked={!useNodes} className={!useNodes ? "primary" : ""} onClick={() => setUseNodes(false)}>Around the station</button>
-          <button role="radio" aria-checked={useNodes} className={useNodes ? "primary" : ""} onClick={() => setUseNodes(true)} disabled={!placed.length}>Every node with a position</button>
-        </div>
+        <label className="field">
+          <span className="flabel">Name</span>
+          <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+        </label>
         {!useNodes && (
-          <>
-            <label htmlFor="mp-km">Distance (km)</label>
-            <input id="mp-km" type="number" min={1} max={200} value={km} onChange={(e) => setKm(Math.max(1, Math.min(200, Number(e.target.value) || 1)))} />
-          </>
+          <label className="field">
+            <span className="flabel">Distance (km)</span>
+            <input type="number" min={1} max={200} value={km} onChange={(e) => setKm(Math.max(1, Math.min(200, Number(e.target.value) || 1)))} />
+          </label>
         )}
-        <label htmlFor="mp-zoom">Most detail</label>
-        <select id="mp-zoom" value={zoom} onChange={(e) => setZoom(Number(e.target.value))}>
-          <option value={10}>Towns (zoom 10)</option>
-          <option value={12}>Main roads (zoom 12)</option>
-          <option value={13}>Streets (zoom 13)</option>
-          <option value={14}>Every building (zoom 14)</option>
-        </select>
+        <label className="field">
+          <span className="flabel">Most detail</span>
+          <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))}>
+            <option value={10}>Towns (zoom 10)</option>
+            <option value={12}>Main roads (zoom 12)</option>
+            <option value={13}>Streets (zoom 13)</option>
+            <option value={14}>Every building (zoom 14)</option>
+          </select>
+        </label>
       </div>
       {!bbox && <div className="small muted">The station radio has no position yet. Set one on the radio, or pick every node with a position.</div>}
       {est && (
