@@ -190,8 +190,22 @@ class DemoRadio:
         return {"hops": [{"hash": h, "snr": round(random.uniform(-6, 11), 2)} for h in path],
                 "final_snr": round(random.uniform(-4, 10), 2)}
 
+    def _contact_nodes(self) -> list[dict[str, Any]]:
+        """The demo radio knows every repeater and the first few companions, not the far ones."""
+        return self.net.repeaters + [n for n in self.net.nodes if n["type"] == 1][:4]
+
+    async def contacts(self) -> list[dict[str, Any]]:
+        kinds = {1: "companion", 2: "repeater"}
+        return sorted(({"public_key": n["key"].hex(), "name": n["name"], "node_type": kinds[n["type"]],
+                        "lat": n["lat"], "lon": n["lon"]} for n in self._contact_nodes()),
+                      key=lambda c: c["name"].lower())
+
     async def path_discovery(self, public_key: str, timeout: float = 30) -> dict[str, Any]:
         await asyncio.sleep(0.5)
+        from .radio import RadioError
+
+        if public_key.lower() not in {n["key"].hex() for n in self._contact_nodes()}:
+            raise RadioError("This repeater isn't in the radio's contacts yet. Wait for its advert, then try again.")
         hops = [n["key"][:1].hex() for n in random.sample(self.net.repeaters[1:], 2)]
         return {"out_path": hops, "in_path": list(reversed(hops))}
 

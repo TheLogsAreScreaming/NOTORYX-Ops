@@ -273,6 +273,23 @@ class RadioLink:
         return (ev.payload or {}).get("text", "").strip()
 
     # ---- reach: trace, path discovery, who can hear me ---------------------
+    async def contacts(self) -> list[dict[str, Any]]:
+        """The radio's own contact list: the only nodes it can find a route to."""
+        mc = self._require()
+        await mc.ensure_contacts(follow=True)
+        kinds = {1: "companion", 2: "repeater", 3: "room", 4: "sensor"}
+        out = []
+        for c in (mc.contacts or {}).values():
+            key = str(c.get("public_key") or "").lower()
+            if not key:
+                continue
+            lat, lon = c.get("adv_lat"), c.get("adv_lon")
+            has_pos = isinstance(lat, (int, float)) and isinstance(lon, (int, float)) and (lat or lon)
+            out.append({"public_key": key, "name": c.get("adv_name") or None,
+                        "node_type": kinds.get(c.get("type")), "lat": lat if has_pos else None,
+                        "lon": lon if has_pos else None})
+        return sorted(out, key=lambda c: ((c["name"] or "~").lower(), c["public_key"]))
+
     async def trace(self, path: list[str], timeout: float = 20) -> dict[str, Any]:
         """Send a trace along these repeater hashes (all the same length) and wait for it to come back.
 

@@ -55,3 +55,25 @@ def test_who_hears_me(tmp_path):
         heard = r.json()["heard"]
         assert len(heard) == 4
         assert heard[0]["snr_them"] >= heard[-1]["snr_them"]
+
+
+def test_contacts_only_lists_what_the_radio_knows(tmp_path):
+    with make(tmp_path) as c:
+        net = c.app.state.station.radio.net
+        r = c.get("/api/reach/contacts")
+        assert r.status_code == 200, r.text
+        keys = [x["public_key"] for x in r.json()]
+        assert all(n["key"].hex() in keys for n in net.repeaters)
+        far = [n for n in net.nodes if n["type"] == 1][5]
+        assert far["key"].hex() not in keys
+        names = [x["name"].lower() for x in r.json()]
+        assert names == sorted(names)
+        # Listing contacts sends nothing, so it doesn't use the airtime budget.
+        assert c.post("/api/reach/who-hears-me").status_code == 200
+
+
+def test_route_to_a_node_the_radio_doesnt_know(tmp_path):
+    with make(tmp_path) as c:
+        far = [n for n in c.app.state.station.radio.net.nodes if n["type"] == 1][5]
+        r = c.post("/api/reach/route", json={"public_key": far["key"].hex()})
+        assert r.status_code == 503 and "contacts" in r.json()["detail"]

@@ -27,8 +27,12 @@ function snrText(v?: number | null) {
 }
 
 export default function Reach() {
-  const { data: info } = useApi<any>("/api/station");
+  const { data: info } = useApi<any>("/api/station", 15000);
   const { data: nodes } = useApi<Node[]>("/api/nodes", 60000);
+  const radioUp = info?.radio?.state === "connected";
+  // Find a route only works for nodes in the radio's own contacts, so the picker lists those.
+  const { data: loaded, error: contactsErr, reload: reloadContacts } = useApi<Match[]>(radioUp ? "/api/reach/contacts" : null, 120000);
+  const contacts = radioUp ? loaded : null;
   const map = useRef<MlMap | null>(null);
   const [drawn, setDrawn] = useState<Drawn>({ lines: [], points: [] });
   const [busy, setBusy] = useState<string | null>(null);
@@ -117,7 +121,7 @@ export default function Reach() {
   const doRoute = () => run("route", async () => {
     const r = await api<any>("/api/reach/route", { method: "POST", body: { public_key: target } });
     setRoute(r);
-    const end = place((nodes || []).find((n) => n.public_key === target) as any);
+    const end = place((contacts || []).find((n) => n.public_key === target)) || place((nodes || []).find((n) => n.public_key === target) as any);
     setDrawn({ lines: [line(r.out, end), line(r.back, end)], points: hopPoints([...r.out, ...r.back]) });
   });
 
@@ -133,7 +137,8 @@ export default function Reach() {
     setDrawn({ lines: pts.map((p: any) => (home ? [home, p.at] : [p.at])), points: pts });
   });
 
-  const nameOf = (key: string) => (nodes || []).find((n) => n.public_key === key)?.name || key.slice(0, 8);
+  const nameOf = (key: string) => (contacts || []).find((n) => n.public_key === key)?.name
+    || (nodes || []).find((n) => n.public_key === key)?.name || key.slice(0, 8);
 
   return (
     <>
@@ -189,13 +194,21 @@ export default function Reach() {
 
           <div className="card">
             <h2>Find a route</h2>
-            <p className="small muted">Asks the mesh for a fresh route to someone and back. The node has to be in the station radio's contacts.</p>
-            <label className="sr-only" htmlFor="route-pick">Node</label>
-            <select id="route-pick" value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="">Choose a node</option>
-              {(nodes || []).map((n) => <option key={n.public_key} value={n.public_key}>{n.name || n.prefix}</option>)}
+            <p className="small muted">Asks the mesh for a fresh route to someone and back. Lists the station radio's contacts, the only nodes it can route to.</p>
+            <label className="sr-only" htmlFor="route-pick">Contact</label>
+            <select id="route-pick" value={target} onChange={(e) => setTarget(e.target.value)} disabled={!contacts?.length}>
+              <option value="">{!radioUp ? "Radio not connected" : contacts == null ? (contactsErr ? "Couldn't read contacts" : "Reading contacts…") : contacts.length ? `Choose a contact (${contacts.length})` : "No contacts on the radio"}</option>
+              {(contacts || []).map((n) => (
+                <option key={n.public_key} value={n.public_key}>
+                  {(n.name || n.public_key.slice(0, 8)) + (n.node_type && n.node_type !== "companion" ? ` (${n.node_type})` : "")}
+                </option>
+              ))}
             </select>
             <button style={{ marginLeft: 8 }} onClick={doRoute} disabled={!!busy || !target}>{busy === "route" ? "Asking…" : "Find"}</button>
+            {radioUp && <button style={{ marginLeft: 8 }} onClick={reloadContacts} disabled={!!busy}>Refresh</button>}
+            {radioUp && contacts != null && !contacts.length && (
+              <p className="small muted" style={{ marginTop: 8 }}>A node is added when its advert reaches the radio (or from a phone app connected to it).</p>
+            )}
             {route && (
               <div className="small" style={{ marginTop: 8 }}>
                 <div><b>To {nameOf(target)}:</b> {route.out.length ? route.out.map(hopName).join(" → ") : "direct"}</div>
