@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, netstats, planning, settings, updates
+from . import analytics, decoder, integrations, maps, netstats, planning, settings, updates
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -130,6 +130,13 @@ class TraceIn(BaseModel):
 
 class RouteIn(BaseModel):
     public_key: str = Field(pattern="^[0-9a-fA-F]{12,64}$")
+
+
+class PackIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    bbox: list[float] = Field(min_length=4, max_length=4)
+    min_zoom: int = Field(default=0, ge=0, le=14)
+    max_zoom: int = Field(default=13, ge=0, le=14)
 
 
 class DecodeIn(BaseModel):
@@ -882,6 +889,118 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             st.hub.unsubscribe(q)
 
     # ---- add-ons ------------------------------------------------------------------
+    # ---- base map kept on the station ------------------------------------------
+    # Not under /api: base map tiles hold nothing private, and the public map needs them too.
+    mc = st.maps
+
+    def cached(data: bytes, ctype: str, days: int = 1) -> Response:
+        headers = {"cache-control": f"public, max-age={days * 86400}"}
+        if maps.is_gzip(data) and ctype == "application/x-protobuf":
+            headers["content-encoding"] = "gzip"
+        return Response(data, media_type=ctype, headers=headers)
+
+    @app.get("/maps/style.json", include_in_schema=False)
+    async def map_style(request: Request):
+        try:
+            style = await asyncio.to_thread(mc.style, str(request.base_url).rstrip("/"))
+        except maps.Offline as exc:
+            raise HTTPException(503, "The base map isn't on the station yet and the tile server can't be reached.") from exc
+        return JSONResponse(style, headers={"cache-control": "no-cache"})
+
+    @app.get("/maps/t/{source}/{z}/{x}/{y}.{ext}", include_in_schema=False)
+    async def map_tile(source: str, z: int, x: int, y: int, ext: str):
+        if ext not in ("pbf", "png") or not maps.SAFE.match(source):
+            raise HTTPException(404)
+        try:
+            data = await asyncio.to_thread(mc.tile, source, z, x, y)
+        except KeyError as exc:
+            raise HTTPException(404) from exc
+        except maps.Offline:
+            return Response(status_code=204, headers={"cache-control": "no-store"})
+        if data is None:
+            return Response(status_code=204)
+        return cached(data, "application/x-protobuf" if ext == "pbf" else "image/png")
+
+    @app.get("/maps/fonts/{stack}/{rng}.pbf", include_in_schema=False)
+    async def map_font(stack: str, rng: str):
+        try:
+            return cached(await asyncio.to_thread(mc.font, stack, rng), "application/x-protobuf", days=30)
+        except KeyError as exc:
+            raise HTTPException(404) from exc
+        except maps.Offline as exc:
+            raise HTTPException(503, "Font not on the station.") from exc
+
+    @app.get("/maps/sprite/{name}", include_in_schema=False)
+    async def map_sprite(name: str):
+        try:
+            data, ctype = await asyncio.to_thread(mc.sprite, name)
+        except KeyError as exc:
+            raise HTTPException(404) from exc
+        except maps.Offline as exc:
+            raise HTTPException(503, "Map icons not on the station.") from exc
+        return cached(data, ctype, days=7)
+
+    @app.get("/api/maps")
+    def map_summary():
+        return mc.summary()
+
+    @app.get("/api/maps/estimate")
+    def map_estimate(west: float, south: float, east: float, north: float, min_zoom: int = 0, max_zoom: int = 13):
+        bbox = maps.check_bbox([west, south, east, north])
+        n = maps.count_tiles(bbox, max(0, min_zoom), min(maps.MAX_PACK_ZOOM, max_zoom))
+        return {"tiles": n, "limit": maps.MAX_PACK_TILES, "approx_bytes": n * 30_000}
+
+    pack_tasks: set[asyncio.Task] = set()
+
+    @app.post("/api/maps/packs", dependencies=[Depends(admin)])
+    async def map_pack_add(body: PackIn, request: Request):
+        """Download an area of the base map and keep it on the station."""
+        if any(j.get("state") == "downloading" for j in mc.jobs.values()):
+            raise HTTPException(409, "A map pack is already downloading. Wait for it to finish.")
+        made = mc.add_pack(body.name, body.bbox, body.min_zoom, body.max_zoom)
+        task = asyncio.create_task(mc.download(made["id"]), name=f"map-pack-{made['id']}")
+        pack_tasks.add(task)
+        task.add_done_callback(pack_tasks.discard)
+        st.store.audit("map_pack_add", {"name": body.name, "tiles": made["tiles"], "by": who(request)})
+        return made
+
+    @app.delete("/api/maps/packs/{pid}", dependencies=[Depends(admin)])
+    def map_pack_delete(pid: int, request: Request):
+        mc.delete_pack(pid)
+        st.store.audit("map_pack_delete", {"id": pid, "by": who(request)})
+        return {"ok": True}
+
+    @app.get("/api/maps/packs/{pid}/export.mbtiles", dependencies=[Depends(admin)])
+    async def map_pack_export(pid: int):
+        dest = cfg.data_dir / "exports" / f"map-pack-{pid}.mbtiles"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            await asyncio.to_thread(mc.export_mbtiles, pid, dest)
+        except KeyError as exc:
+            raise HTTPException(404, "No such map pack.") from exc
+        return FileResponse(dest, media_type="application/x-sqlite3", filename=f"map-pack-{pid}.mbtiles")
+
+    @app.post("/api/maps/import", dependencies=[Depends(admin)])
+    async def map_pack_import(request: Request, name: str | None = None):
+        """Add a map pack from an MBTiles file (sent as the request body)."""
+        dest = cfg.data_dir / "exports" / f"import-{int(time.time())}.mbtiles"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        size = 0
+        with dest.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 2 * 1024**3:
+                    f.close()
+                    dest.unlink(missing_ok=True)
+                    raise HTTPException(413, "That file is over 2 GB.")
+                f.write(chunk)
+        try:
+            made = await asyncio.to_thread(mc.import_mbtiles, dest, name)
+        finally:
+            dest.unlink(missing_ok=True)
+        st.store.audit("map_pack_import", {"tiles": made["tiles"], "by": who(request)})
+        return made
+
     @app.get("/api/addons")
     def addon_list():
         from .addons import describe

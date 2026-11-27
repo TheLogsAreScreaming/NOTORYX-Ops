@@ -17,6 +17,7 @@ from .field import Field
 from .fleet import Fleet
 from .ingest import Hub, Ingest
 from .integrations import HomeAssistant, PostgresArchive
+from .maps import MapCache
 from .mqtt_ingest import MqttFeed
 from .netstats import StatsPush
 from .planning import Planner
@@ -27,7 +28,7 @@ log = logging.getLogger(__name__)
 
 
 class Station:
-    def __init__(self, cfg: Config, store: Store | None = None, terrain_fetch=None, addon_factories=None):
+    def __init__(self, cfg: Config, store: Store | None = None, terrain_fetch=None, addon_factories=None, maps_fetch=None):
         self.cfg = cfg
         self.started_at = time.time()
         self.store = store or Store(cfg.db_path)
@@ -48,6 +49,7 @@ class Station:
         self.fleet = Fleet(cfg, self.store, self.radio, self.alerts, self.hub)
         self.fleet.field = self.field
         self.planner = Planner(cfg, self.store, fetch=terrain_fetch)
+        self.maps = MapCache(cfg.data_dir / "maps.sqlite", fetch=maps_fetch)
         self.auth = Auth(cfg, self.store)
         self.ha = HomeAssistant(cfg, self.store, self)
         self.pg = PostgresArchive(cfg, self.store)
@@ -91,12 +93,19 @@ class Station:
 
     async def _watch_radio(self) -> None:
         """Raise or clear the "station radio lost" alert every half minute."""
+        ticks = 0
         while True:
             await asyncio.sleep(30)
+            ticks += 1
             try:
                 self.alerts.check_radio(self.radio)
             except Exception:  # noqa: BLE001
                 log.exception("radio check failed")
+            if ticks % 20 == 0:  # every 10 minutes keep the map cache under its size limit
+                try:
+                    await asyncio.to_thread(self.maps.trim)
+                except Exception:  # noqa: BLE001
+                    log.exception("map cache trim failed")
 
     def _radio_key(self) -> tuple:
         c = self.cfg
