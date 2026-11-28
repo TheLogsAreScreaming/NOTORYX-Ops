@@ -11,7 +11,6 @@ from notoryx_ops.config import Config
 from notoryx_ops.server import _telemetry_summary, create_app
 from notoryx_ops.store import Store
 
-
 SAMPLE_LPP = [
     {"channel": 1, "type": "temperature", "value": 22.5},
     {"channel": 2, "type": "humidity", "value": 61.0},
