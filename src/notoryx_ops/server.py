@@ -18,7 +18,18 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates
+from . import (
+    analytics,
+    decoder,
+    integrations,
+    maps,
+    netstats,
+    planning,
+    privacy,
+    regionlabel,
+    settings,
+    updates,
+)
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -437,9 +448,16 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/messages")
     def messages(channel: str | None = None, limit: int = 200):
         if channel:
-            return st.store.q("SELECT * FROM messages WHERE channel = ? ORDER BY received_at DESC LIMIT ?",
-                              (channel, min(limit, 2000)))
-        return st.store.q("SELECT * FROM messages ORDER BY received_at DESC LIMIT ?", (min(limit, 2000),))
+            rows = st.store.q(
+                "SELECT * FROM messages WHERE channel = ? ORDER BY received_at DESC LIMIT ?",
+                (channel, min(limit, 2000)),
+            )
+        else:
+            rows = st.store.q(
+                "SELECT * FROM messages ORDER BY received_at DESC LIMIT ?",
+                (min(limit, 2000),),
+            )
+        return regionlabel.annotate_messages(st.store, rows)
 
     sent_times: list[float] = []
 
