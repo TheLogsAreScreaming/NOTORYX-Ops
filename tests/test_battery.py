@@ -10,7 +10,6 @@ from notoryx_ops.battery import annotate, mv_to_pct
 from notoryx_ops.config import Config
 from notoryx_ops.server import create_app
 
-
 # ---- unit tests for mv_to_pct ---------------------------------------------
 
 def test_full_charge():
