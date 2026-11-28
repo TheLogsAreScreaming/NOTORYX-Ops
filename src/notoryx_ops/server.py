@@ -18,7 +18,18 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates
+from . import (
+    analytics,
+    decoder,
+    integrations,
+    maps,
+    netstats,
+    pathtrace,
+    planning,
+    privacy,
+    settings,
+    updates,
+)
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -804,6 +815,15 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/fleet/{rid}/history")
     def fleet_history(rid: int, days: float = 7):
         return st.store.status_history(rid, time.time() - max(0.1, min(days, 365)) * 86400)
+
+    @app.get("/api/fleet/{rid}/path-trace")
+    def fleet_path_trace(rid: int, days: float = 7):
+        rep = st.store.one("SELECT public_key FROM repeaters WHERE id = ?", (rid,))
+        if rep is None:
+            raise HTTPException(404, "Repeater not found.")
+        days = max(0.1, min(days, 30))
+        paths = pathtrace.observed_paths(st.store, rep["public_key"], days=days)
+        return pathtrace.resolve_paths(st.store, paths)
 
     @app.post("/api/fleet/poll", dependencies=[Depends(operator)])
     def fleet_poll():
