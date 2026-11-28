@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import (
     analytics,
+    battery,
     decoder,
     integrations,
     maps,
@@ -859,7 +860,13 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     # ---- fleet ----------------------------------------------------------------
     @app.get("/api/fleet")
     def fleet():
-        return st.fleet.overview()
+        rows = st.fleet.overview()
+        for r in rows:
+            if r.get("last_poll"):
+                battery.annotate(r["last_poll"])
+            if r.get("last_ok"):
+                battery.annotate(r["last_ok"])
+        return rows
 
     @app.post("/api/fleet", dependencies=[Depends(operator)])
     def fleet_add(body: RepeaterIn):
@@ -887,7 +894,8 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
 
     @app.get("/api/fleet/{rid}/history")
     def fleet_history(rid: int, days: float = 7):
-        return st.store.status_history(rid, time.time() - max(0.1, min(days, 365)) * 86400)
+        rows = st.store.status_history(rid, time.time() - max(0.1, min(days, 365)) * 86400)
+        return [battery.annotate(r) for r in rows]
 
     @app.post("/api/fleet/poll", dependencies=[Depends(operator)])
     def fleet_poll():
