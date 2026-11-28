@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates
+from . import analytics, decoder, integrations, maps, netstats, planning, privacy, rfstats, settings, updates
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -410,6 +410,19 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/nodes")
     def nodes(include_ignored: bool = False):
         return mark(st.store.nodes(include_ignored))
+
+    @app.get("/api/nodes/{public_key}/rf-stats")
+    def node_rf_stats_endpoint(public_key: str):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", public_key):
+            raise HTTPException(400, "That isn't a node's full public key.")
+        result = rfstats.node_rf_stats(st.store, public_key.lower(), since=st.started_at)
+        if result is None:
+            raise HTTPException(404, "No RF stats for that node since boot.")
+        return result
+
+    @app.get("/api/rf-stats")
+    def all_rf_stats_endpoint():
+        return rfstats.all_rf_stats(st.store, since=st.started_at)
 
     # ---- ignore list ----------------------------------------------------------
     @app.get("/api/ignored")
