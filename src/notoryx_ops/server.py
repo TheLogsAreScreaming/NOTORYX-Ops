@@ -26,6 +26,7 @@ from . import (
     netstats,
     planning,
     privacy,
+    reach_label,
     relay_attr,
     settings,
     updates,
@@ -435,16 +436,29 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
                 r["ignored"] = r.get(key) in hidden
         return rows
 
+    def _station_prefix() -> str | None:
+        key = st.radio.info().get("public_key") or ""
+        return key[:2] or None
+
     @app.get("/api/nodes")
     def nodes(include_ignored: bool = False):
         rows = st.store.nodes(include_ignored)
+        labels = reach_label.fleet_reach(st.store, _station_prefix())
         telem_map = st.store.all_telemetry()
         for r in rows:
+            r["reach"] = labels.get(r["public_key"], "unknown")
             pre = r["public_key"][:12].lower()
             t = telem_map.get(pre)
             r["telemetry"] = _telemetry_summary(t["lpp"]) if t else None
             r["telemetry_at"] = t["received_at"] if t else None
         return mark(rows)
+
+    @app.get("/api/nodes/{public_key}/reach")
+    def node_reach_ep(public_key: str):
+        if not re.fullmatch(r"[0-9a-fA-F]{64}", public_key):
+            raise HTTPException(400, "Provide the node's full 64-character public key.")
+        label = reach_label.node_reach(st.store, public_key.lower(), _station_prefix())
+        return {"public_key": public_key.lower(), "reach": label}
 
     @app.get("/api/nodes/{public_key}/telemetry")
     def node_telemetry(public_key: str):
