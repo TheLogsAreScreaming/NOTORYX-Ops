@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates
+from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates, who_repeats
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -528,6 +528,28 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             m = resolve([r["key"][:12]])[0]["matches"]
             r["node"] = m[0] if m else None
         return {"heard": heard, "at": time.time()}
+
+    @app.get("/api/reach/who-repeats-me", dependencies=[Depends(operator)])
+    def reach_who_repeats(window_days: int = 7):
+        """Relay nodes seen in relay paths alongside this station over the last N days.
+
+        Uses stored packet data only — no transmissions are sent.
+        """
+        pre = st.radio.info().get("public_key", "")[:2] or None
+        relayers = who_repeats.repeaters_panel(st.store, pre, window_days=window_days)
+        # Resolve each prefix to a known node if possible.
+        prefixes = [r["prefix"] for r in relayers]
+        resolved = {m["hash"]: m for chunk in [prefixes[i:i + 50] for i in range(0, len(prefixes), 50)]
+                    for m in resolve(chunk) if m["matches"]}
+        for r in relayers:
+            m = resolved.get(r["prefix"])
+            r["node"] = m["matches"][0] if m else None
+        return {
+            "station_prefix": pre,
+            "window_days": window_days,
+            "relayers": relayers,
+            "at": time.time(),
+        }
 
     @app.get("/api/channels")
     def channels():
