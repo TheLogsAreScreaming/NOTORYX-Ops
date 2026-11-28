@@ -18,7 +18,18 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, privacy, reach_label, settings, updates
+from . import (
+    analytics,
+    decoder,
+    integrations,
+    maps,
+    netstats,
+    planning,
+    privacy,
+    reach_label,
+    settings,
+    updates,
+)
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config

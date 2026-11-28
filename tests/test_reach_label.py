@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import struct
 import time
 
@@ -30,7 +29,6 @@ def _upsert_node(store: Store, key: str) -> None:
 
 def _add_packet(store: Store, node_key: str, hops: int, path: list[str]) -> None:
     app = decoder.encode_advert_app_data(2, "X", None, None)
-    payload = bytes.fromhex(node_key[:2] + node_key[2:4]) + bytes(96)
     raw = decoder.encode_packet(1, 0x04, [bytes.fromhex(h) for h in path],
                                 bytes.fromhex(node_key[:2] * 32) + struct.pack("<I", int(time.time())) + bytes(64) + app[:1])
     pkt = decoder.decode(raw)
