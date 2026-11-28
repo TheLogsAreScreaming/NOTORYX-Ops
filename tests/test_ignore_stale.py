@@ -165,7 +165,7 @@ def test_schema_upgrade_from_version_1(tmp_path):
     db.commit()
     db.close()
     st = Store(path)
-    assert SCHEMA_VERSION == 2 and st.schema_version() == 2
+    assert st.schema_version() == SCHEMA_VERSION
     assert st.ignore("cd" * 32)
     assert Store(":memory:").schema_version() == SCHEMA_VERSION
 
