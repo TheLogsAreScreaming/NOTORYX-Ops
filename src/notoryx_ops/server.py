@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Res
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analytics, decoder, integrations, maps, netstats, planning, privacy, settings, updates
+from . import analytics, clusters, decoder, integrations, maps, netstats, planning, privacy, settings, updates
 from .auth import COOKIE, RANK, SESSION_DAYS, is_local
 from .channels import decrypt_group_text
 from .config import Config
@@ -410,6 +410,12 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     @app.get("/api/nodes")
     def nodes(include_ignored: bool = False):
         return mark(st.store.nodes(include_ignored))
+
+    @app.get("/api/nodes/clusters")
+    def nodes_clusters(zoom: int = 10, include_ignored: bool = False):
+        all_nodes = mark(st.store.nodes(include_ignored))
+        zoom = max(1, min(18, zoom))
+        return clusters.build_clusters(all_nodes, zoom)
 
     # ---- ignore list ----------------------------------------------------------
     @app.get("/api/ignored")
