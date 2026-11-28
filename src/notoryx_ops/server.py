@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from . import (
     analytics,
     battery,
+    contactwarn,
     decoder,
     integrations,
     maps,
@@ -574,6 +575,12 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     async def reach_contacts():
         """The station radio's contacts. Find a route only works for these. Sends nothing on air."""
         return await st.radio.contacts()
+
+    @app.get("/api/reach/contacts/warning", dependencies=[Depends(operator)])
+    async def reach_contacts_warning():
+        """Contact-list capacity check.  Returns a banner-worthy warning when >90 % full."""
+        contacts = await st.radio.contacts()
+        return contactwarn.contact_warning(len(contacts))
 
     @app.post("/api/reach/route", dependencies=[Depends(operator)])
     async def reach_route(body: RouteIn, request: Request):
