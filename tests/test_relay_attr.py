@@ -8,9 +8,7 @@ import time
 from fastapi.testclient import TestClient
 
 from notoryx_ops import decoder
-from notoryx_ops.channels import parse_channel
 from notoryx_ops.config import Config
-from notoryx_ops.ingest import Hub, Ingest
 from notoryx_ops.relay_attr import _fmt_label, enrich_messages
 from notoryx_ops.server import create_app
 from notoryx_ops.store import Store
@@ -122,9 +120,7 @@ def make(tmp_path, **kw):
 
 def test_messages_endpoint_has_relay_field(tmp_path):
     with make(tmp_path) as c:
-        hub = c.app.state.station.hub
         store = c.app.state.station.store
-        ing = Ingest(store, [parse_channel("public")], hub)
         _add_message_and_packet(store, [RELAY_PRE], hops=1)
         msgs = c.get("/api/messages").json()
         assert all("relay" in m for m in msgs)
