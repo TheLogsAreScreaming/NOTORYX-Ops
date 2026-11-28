@@ -106,9 +106,17 @@ class RadioLink:
                 async def on_disconnect(_event):
                     self.state = "disconnected"
 
+                async def on_telemetry(event):
+                    p = event.payload or {}
+                    lpp = p.get("lpp")
+                    pre = p.get("pubkey_pre") or p.get("tag", "")
+                    if lpp and pre:
+                        self.ingest.handle_telemetry(str(pre), lpp, time.time())
+
                 self._install_tap(mc)
                 mc.subscribe(EventType.RX_LOG_DATA, on_rx)
                 mc.subscribe(EventType.DISCONNECTED, on_disconnect)
+                mc.subscribe(EventType.TELEMETRY_RESPONSE, on_telemetry)
                 await mc.ensure_contacts()
                 await mc.start_auto_message_fetching()
                 if self.connected_at is not None:

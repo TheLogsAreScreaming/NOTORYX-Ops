@@ -146,3 +146,9 @@ class Ingest:
         else:
             self.hub.publish(event)
         return event
+
+    def handle_telemetry(self, pubkey_pre: str, lpp: list, now: float | None = None) -> None:
+        """Cache server-pushed sensor telemetry and broadcast a live event."""
+        now = now or time.time()
+        self.store.upsert_telemetry(pubkey_pre, lpp, now)
+        self.hub.publish({"type": "telemetry", "pubkey_pre": pubkey_pre, "lpp": lpp, "received_at": now})

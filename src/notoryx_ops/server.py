@@ -56,6 +56,22 @@ def web_dir() -> Path | None:
     return None
 
 
+# LPP type names the UI shows as sensor readings.
+_SENSOR_TYPES = {"temperature", "humidity", "barometer", "voltage", "concentration",
+                 "illuminance", "percentage", "altitude", "current", "power", "distance"}
+
+
+def _telemetry_summary(lpp: list) -> dict[str, Any]:
+    """Extract named sensor values from an LPP payload list into a flat {name: value} dict."""
+    out: dict[str, Any] = {}
+    for item in (lpp or []):
+        t = item.get("type") if isinstance(item, dict) else None
+        v = item.get("value") if isinstance(item, dict) else None
+        if t in _SENSOR_TYPES and v is not None:
+            out.setdefault(t, v)
+    return out
+
+
 class RepeaterIn(BaseModel):
     public_key: str = Field(min_length=64, max_length=64)
     name: str = Field(min_length=1, max_length=40)
@@ -426,8 +442,13 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
     def nodes(include_ignored: bool = False):
         rows = st.store.nodes(include_ignored)
         labels = reach_label.fleet_reach(st.store, _station_prefix())
+        telem_map = st.store.all_telemetry()
         for r in rows:
             r["reach"] = labels.get(r["public_key"], "unknown")
+            pre = r["public_key"][:12].lower()
+            t = telem_map.get(pre)
+            r["telemetry"] = _telemetry_summary(t["lpp"]) if t else None
+            r["telemetry_at"] = t["received_at"] if t else None
         return mark(rows)
 
     @app.get("/api/nodes/{public_key}/reach")
@@ -436,6 +457,16 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
             raise HTTPException(400, "Provide the node's full 64-character public key.")
         label = reach_label.node_reach(st.store, public_key.lower(), _station_prefix())
         return {"public_key": public_key.lower(), "reach": label}
+
+    @app.get("/api/nodes/{public_key}/telemetry")
+    def node_telemetry(public_key: str):
+        if not re.fullmatch(r"[0-9a-fA-F]{12,64}", public_key):
+            raise HTTPException(400, "Provide at least the first 12 hex characters of the node's public key.")
+        t = st.store.get_telemetry(public_key)
+        if t is None:
+            raise HTTPException(404, "No telemetry cached for that node yet.")
+        t["summary"] = _telemetry_summary(t["lpp"])
+        return t
 
     # ---- ignore list ----------------------------------------------------------
     @app.get("/api/ignored")

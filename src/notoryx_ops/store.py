@@ -12,7 +12,7 @@ from typing import Any
 
 from .decoder import valid_position
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # SQL conditions that leave out nodes on the ignore list. A packet without a node key
 # (anything but an advert) can't be tied to one node, so it always stays.
@@ -144,6 +144,13 @@ CREATE TABLE IF NOT EXISTS audit (
   action TEXT NOT NULL,
   detail TEXT NOT NULL
 );
+
+-- Since schema 3: latest server-pushed sensor telemetry per node (LPP format, keyed by 6-byte key prefix).
+CREATE TABLE IF NOT EXISTS node_telemetry (
+  pubkey_pre TEXT PRIMARY KEY,
+  lpp TEXT NOT NULL,
+  received_at REAL NOT NULL
+);
 """
 
 
@@ -180,6 +187,7 @@ class Store:
         """Record the schema version. Each step brings a database up from the version before it.
 
         1 -> 2: the ignored_nodes table, which the schema script above already created.
+        2 -> 3: the node_telemetry table, which the schema script above already created.
         """
         row = self.db.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
         have = int(row[0]) if row else 0
@@ -423,3 +431,28 @@ class Store:
             "UPDATE alerts SET resolved_at = ? WHERE kind = ? AND subject = ? AND resolved_at IS NULL",
             (time.time(), kind, subject),
         ))
+
+    # ---- telemetry --------------------------------------------------------
+    def upsert_telemetry(self, pubkey_pre: str, lpp: list, now: float) -> None:
+        self.x(
+            "INSERT INTO node_telemetry(pubkey_pre, lpp, received_at) VALUES (?,?,?)"
+            " ON CONFLICT(pubkey_pre) DO UPDATE SET lpp = excluded.lpp, received_at = excluded.received_at",
+            (pubkey_pre.lower(), json.dumps(lpp), now),
+        )
+
+    def get_telemetry(self, public_key: str) -> dict[str, Any] | None:
+        """Latest telemetry for a node matched by its 6-byte (12 hex char) key prefix."""
+        pre = public_key[:12].lower()
+        r = self.one("SELECT * FROM node_telemetry WHERE pubkey_pre = ?", (pre,))
+        if r:
+            r["lpp"] = json.loads(r["lpp"])
+        return r
+
+    def all_telemetry(self) -> dict[str, dict[str, Any]]:
+        """Map of pubkey_pre -> {lpp, received_at} for all cached telemetry."""
+        rows = self.q("SELECT * FROM node_telemetry")
+        out = {}
+        for r in rows:
+            r["lpp"] = json.loads(r["lpp"])
+            out[r["pubkey_pre"]] = r
+        return out
