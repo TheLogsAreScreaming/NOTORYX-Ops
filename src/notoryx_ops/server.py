@@ -27,6 +27,7 @@ from . import (
     planning,
     privacy,
     reach_label,
+    relay_attr,
     settings,
     updates,
     who_repeats,
@@ -494,10 +495,13 @@ def create_app(cfg: Config, station: Station | None = None) -> FastAPI:
 
     @app.get("/api/messages")
     def messages(channel: str | None = None, limit: int = 200):
+        pre = st.radio.info().get("public_key", "")[:2] or None
         if channel:
-            return st.store.q("SELECT * FROM messages WHERE channel = ? ORDER BY received_at DESC LIMIT ?",
+            rows = st.store.q("SELECT * FROM messages WHERE channel = ? ORDER BY received_at DESC LIMIT ?",
                               (channel, min(limit, 2000)))
-        return st.store.q("SELECT * FROM messages ORDER BY received_at DESC LIMIT ?", (min(limit, 2000),))
+        else:
+            rows = st.store.q("SELECT * FROM messages ORDER BY received_at DESC LIMIT ?", (min(limit, 2000),))
+        return relay_attr.enrich_messages(st.store, rows, pre)
 
     sent_times: list[float] = []
 
