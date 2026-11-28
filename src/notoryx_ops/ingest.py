@@ -134,8 +134,10 @@ class Ingest:
                 except Exception:  # noqa: BLE001 - a bad report must never stop packet intake
                     log.exception("couldn't read a field message")
             if fresh:
+                relay_path = pkt.path
                 self.hub.publish({"type": "message", "channel": message.channel, "sender": message.sender,
-                                  "text": message.text, "received_at": now, "hops": pkt.hops})
+                                  "text": message.text, "received_at": now, "hops": pkt.hops,
+                                  "relay_path": relay_path})
 
         event = {"type": "packet", "repeat": repeat, **row}
         if pkt.advert:
